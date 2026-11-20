@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1f3a"/>
+      <stop offset="0.55" stop-color="#5a2a5e"/>
+      <stop offset="1" stop-color="#ff7a3d"/>
+    </linearGradient>
+    <linearGradient id="rope" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="0.5" stop-color="#ff5d8f"/>
+      <stop offset="1" stop-color="#7b6cff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+  <circle cx="256" cy="372" r="96" fill="#ffd9a0" opacity="0.9"/>
+  <rect y="372" width="512" height="140" fill="#12141f"/>
+  <path d="M72 300 C 150 220, 210 380, 256 300 S 370 220, 440 300" fill="none" stroke="url(#rope)" stroke-width="30" stroke-linecap="round"/>
+</svg>
