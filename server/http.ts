@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z, ZodError } from 'zod';
-import type { Snapshot } from '../shared/types';
+import type { LookSuggestions, Snapshot } from '../shared/types';
 import { config } from './config';
 import { GoveeError } from './govee/cloud';
 import { HttpError, type Hub } from './hub';
-import { controlSchema, type Ops } from './ops';
+import { suggestLooks } from './ai';
+import { controlSchema, suggestSchema, type Ops } from './ops';
 import type { Scheduler } from './scheduler';
 
 export interface Services {
@@ -179,6 +180,27 @@ export function createApi(services: Services, events: Events): express.Router {
     const targets = String(req.query.targets ?? '').split(',').filter(Boolean);
     if (targets.length === 0) throw new HttpError(400, 'No lights given');
     res.json(await hub.scenes(targets, req.query.reload === '1'));
+  });
+
+  /** Look ideas from a description. Only the description, the look being edited and scene names leave this computer. */
+  api.post('/ai/looks', async (req, res) => {
+    const { prompt, current, targets } = suggestSchema.parse(req.body);
+    const ids = new Set(hub.deviceIds(targets));
+    const lights = hub.list().filter((d) => ids.has(d.id));
+    // Scenes are a bonus; a hiccup fetching them should not block the ideas.
+    const available = lights.length ? await hub.scenes(targets).then((r) => r.scenes.filter((s) => s.kind === 'light'), () => []) : [];
+    const result = await suggestLooks({
+      prompt,
+      current: current ?? null,
+      lightCount: lights.length,
+      segmentCounts: [...new Set(lights.map((d) => d.caps.segments).filter((n) => n > 0))],
+      sceneNames: available.map((s) => s.name),
+    });
+    const suggestions: LookSuggestions = {
+      ideas: result.ideas,
+      scenes: result.sceneNames.map((name) => ({ kind: 'light', name })),
+    };
+    res.json(suggestions);
   });
 
   api.post('/looks', (req, res) => void res.json(ops.saveLook(req.body)));

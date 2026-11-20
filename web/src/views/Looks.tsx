@@ -1,11 +1,11 @@
 import { useRef, useState, type CSSProperties } from 'react';
 import { toHex } from '../../../shared/color';
 import { PATTERNS, renderLook } from '../../../shared/looks';
-import type { Action, Look, LookPattern, RGB } from '../../../shared/types';
+import type { Action, Look, LookIdea, LookPattern, LookSuggestions, RGB } from '../../../shared/types';
 import { ColorPad } from '../components/ColorPad';
 import { Strip } from '../components/Strip';
 import { Empty, Field, Group, Sheet, Slider, Toggle } from '../components/ui';
-import { CloseIcon, ImageIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from '../icons';
+import { CloseIcon, ImageIcon, PencilIcon, PlayIcon, PlusIcon, SparkIcon, TrashIcon } from '../icons';
 import { paletteFromImage } from '../palette';
 import { api, attempt, control, toast, useSnap } from '../store';
 import { MODEL_NAMES } from '../util';
@@ -50,14 +50,19 @@ export function ApplySheet({ title, onPick, onClose }: { title: string; onPick: 
   );
 }
 
-export function LooksView({ edit }: { edit: (look: Look | null) => void }) {
-  const { looks } = useSnap();
+export function LooksView({ edit }: { edit: (look: Look | null, assist?: boolean) => void }) {
+  const { looks, status } = useSnap();
   const [applying, setApplying] = useState<Look | null>(null);
 
   return (
     <>
       <header className="page-head">
         <h1>Looks</h1>
+        {status.ai && (
+          <button type="button" className="btn" aria-label="Describe a look" onClick={() => edit(null, true)}>
+            <SparkIcon size={18} /> <span className="wide-only">Describe</span>
+          </button>
+        )}
         <button type="button" className="btn primary" onClick={() => edit(null)}>
           <PlusIcon size={18} /> New look
         </button>
@@ -107,9 +112,101 @@ export function LooksView({ edit }: { edit: (look: Look | null) => void }) {
   );
 }
 
+/**
+ * Asks the assistant for look ideas from a description. Picking one loads it into the
+ * editor, where it can be adjusted, tried on the lights and saved like any other look.
+ */
+function Assist({ current, target, autoFocus, onPick }: { current: Draft | null; target: string; autoFocus?: boolean; onPick: (idea: LookIdea) => void }) {
+  const { status } = useSnap();
+  const [prompt, setPrompt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<LookSuggestions | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
+
+  if (!status.ai) {
+    return (
+      <p className="muted small assist-off">
+        <SparkIcon size={14} /> Want ideas from a description? Add an Anthropic API key as <code>ANTHROPIC_API_KEY</code> in the <code>.env</code> file and restart.
+      </p>
+    );
+  }
+
+  const ask = async () => {
+    if (!prompt.trim() || busy) return;
+    setBusy(true);
+    const body = { prompt: prompt.trim(), targets: [target], current: current && { name: current.name, colors: current.colors, pattern: current.pattern, brightness: current.brightness } };
+    const next = await attempt(api<LookSuggestions>('POST', '/ai/looks', body));
+    setBusy(false);
+    if (next) {
+      setResult(next);
+      setPicked(null);
+    }
+  };
+
+  return (
+    <div className="assist">
+      <form
+        className="inline"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void ask();
+        }}
+      >
+        <input
+          className="input"
+          autoFocus={autoFocus}
+          aria-label="Describe the look you want"
+          placeholder={current ? 'e.g. warmer, less purple' : 'e.g. cosy autumn evening'}
+          maxLength={500}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+        <button type="submit" className="btn primary" disabled={busy || !prompt.trim()}>
+          <SparkIcon size={16} /> {busy ? 'Thinking…' : result ? 'Again' : 'Suggest'}
+        </button>
+      </form>
+      {busy && <p className="muted small">Coming up with ideas. This usually takes a few seconds.</p>}
+      {result && !busy && (
+        <>
+          <div className="options">
+            {result.ideas.map((idea, i) => (
+              <button
+                key={i}
+                type="button"
+                className="option"
+                aria-pressed={picked === i}
+                onClick={() => {
+                  setPicked(i);
+                  onPick(idea);
+                }}
+              >
+                <LookPreview look={idea} size="sm" />
+                <strong>{idea.name}</strong>
+                <small>{idea.note}</small>
+              </button>
+            ))}
+          </div>
+          {result.scenes.length > 0 && (
+            <div className="assist-scenes">
+              <span className="field-hint">Looks are still. For movement, these built-in scenes fit; tap one to play it:</span>
+              <div className="chips">
+                {result.scenes.map((scene) => (
+                  <button key={scene.name} type="button" className="chip" onClick={() => void control([target], { type: 'scene', scene })}>
+                    <PlayIcon size={12} /> {scene.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const NEW_LOOK: Draft = { name: '', colors: [0xff5d3d, 0xffc94d, 0x7b6cff], pattern: 'gradient', brightness: null };
 
-export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null; onClose: () => void; tryOn?: string }) {
+export function LookEditor({ look, onClose, tryOn = 'all', assist }: { look: Look | null; onClose: () => void; tryOn?: string; assist?: boolean }) {
   const snap = useSnap();
   const [draft, setDraft] = useState<Draft>(() => (look ? { name: look.name, colors: look.colors, pattern: look.pattern, segments: look.segments, brightness: look.brightness } : NEW_LOOK));
   const [selected, setSelected] = useState(0);
@@ -118,10 +215,24 @@ export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const update = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
-  const setColor = (index: number, color: RGB) => update({ colors: draft.colors.map((c, i) => (i === index ? color : c)) });
+  // Until something changes, a new look is only the starting palette and should not steer suggestions.
+  const [touched, setTouched] = useState(!!look);
+  const update = (patch: Partial<Draft>) => {
+    setTouched(true);
+    setDraft((d) => ({ ...d, ...patch }));
+  };
+  const painted = draft.pattern === 'custom' && !!draft.segments?.length;
+  const setColor = (index: number, color: RGB) => {
+    const old = draft.colors[index];
+    update({
+      colors: draft.colors.map((c, i) => (i === index ? color : c)),
+      // In a painted design, changing a colour recolours every segment that used it.
+      // Otherwise the palette no longer matches any earlier painting, so that is dropped.
+      segments: painted ? draft.segments!.map((c) => (c === old ? color : c)) : undefined,
+    });
+  };
   const index = Math.min(selected, draft.colors.length - 1);
-  const patterns = PATTERNS.filter((p) => p.id !== 'custom' || look?.pattern === 'custom');
+  const patterns = PATTERNS.filter((p) => p.id !== 'custom' || !!draft.segments?.length);
 
   const body = (): Draft => ({ ...draft, name: draft.name.trim(), segments: draft.pattern === 'custom' ? draft.segments : undefined });
 
@@ -142,7 +253,7 @@ export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null
     if (!file) return;
     try {
       const colors = await paletteFromImage(file);
-      update({ colors, pattern: draft.pattern === 'custom' || draft.pattern === 'solid' ? 'gradient' : draft.pattern });
+      update({ colors, segments: undefined, pattern: draft.pattern === 'custom' || draft.pattern === 'solid' ? 'gradient' : draft.pattern });
       setSelected(0);
     } catch {
       toast('Could not read that image', 'error');
@@ -182,6 +293,17 @@ export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null
       }
     >
       <div className="form">
+        <Assist
+          current={touched ? draft : null}
+          target={target}
+          autoFocus={assist}
+          onPick={(idea) => {
+            // An existing look keeps its name; a new one takes the idea's.
+            update({ name: look ? draft.name : idea.name, colors: idea.colors, pattern: idea.pattern, segments: idea.segments, brightness: idea.brightness });
+            setSelected(0);
+          }}
+        />
+
         <div className="preview-stage">
           <LookPreview look={draft} size="lg" />
         </div>
@@ -190,18 +312,18 @@ export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null
           <input className="input" value={draft.name} placeholder="e.g. Game night" maxLength={60} onChange={(e) => update({ name: e.target.value })} />
         </Field>
 
-        <Group label="Colours" hint={draft.pattern === 'custom' ? 'This look was painted by hand; choosing another pattern replaces the painting with these colours.' : undefined}>
+        <Group label="Colours" hint={painted ? 'This design is painted segment by segment. Change a colour to recolour it, or choose another pattern to use these colours differently.' : undefined}>
           <div className="palette">
             {draft.colors.map((c, i) => (
               <span key={i} className="palette-item">
                 <button type="button" className="swatch xl" aria-label={`Colour ${i + 1}: ${toHex(c)}`} aria-pressed={i === index} style={{ '--c': toHex(c) } as CSSProperties} onClick={() => setSelected(i)} />
-                {draft.colors.length > 1 && i === index && (
+                {draft.colors.length > 1 && i === index && !painted && (
                   <button
                     type="button"
                     className="palette-remove"
                     aria-label={`Remove colour ${i + 1}`}
                     onClick={() => {
-                      update({ colors: draft.colors.filter((_, j) => j !== i) });
+                      update({ colors: draft.colors.filter((_, j) => j !== i), segments: undefined });
                       setSelected(Math.max(0, i - 1));
                     }}
                   >
@@ -210,13 +332,13 @@ export function LookEditor({ look, onClose, tryOn = 'all' }: { look: Look | null
                 )}
               </span>
             ))}
-            {draft.colors.length < 8 && (
+            {draft.colors.length < 8 && !painted && (
               <button
                 type="button"
                 className="swatch xl add"
                 aria-label="Add a colour"
                 onClick={() => {
-                  update({ colors: [...draft.colors, draft.colors[index]] });
+                  update({ colors: [...draft.colors, draft.colors[index]], segments: undefined });
                   setSelected(draft.colors.length);
                 }}
               >

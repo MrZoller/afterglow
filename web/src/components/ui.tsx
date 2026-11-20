@@ -132,7 +132,8 @@ export function Sheet({ title, subtitle, onClose, children, side, actions, foote
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
+    // Leave focus alone when a field inside asked for it (autoFocus).
+    if (!ref.current?.contains(document.activeElement)) ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();

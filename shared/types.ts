@@ -95,6 +95,22 @@ export type Action =
   | { type: 'palette'; colors: RGB[]; pattern: LookPattern; segments?: RGB[]; brightness: number | null }
   | { type: 'toggle'; instance: string; on: boolean };
 
+/** A look proposed by the assistant, not yet saved. */
+export interface LookIdea {
+  name: string;
+  colors: RGB[];
+  pattern: LookPattern;
+  segments?: RGB[];
+  brightness: number | null;
+  note: string;
+}
+
+export interface LookSuggestions {
+  ideas: LookIdea[];
+  /** Built-in animated scenes that fit the request. */
+  scenes: SceneRef[];
+}
+
 export type TimeSpec =
   | { type: 'clock'; time: string } // "HH:MM", 24h, local time
   | { type: 'sun'; event: 'sunrise' | 'sunset'; offsetMin: number };
@@ -150,6 +166,8 @@ export interface Status {
   sun: { sunrise: number; sunset: number } | null;
   timezone: string;
   authRequired: boolean;
+  /** Whether look suggestions from a description are available. */
+  ai: boolean;
   version: string;
 }
 

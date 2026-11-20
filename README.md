@@ -5,6 +5,7 @@ A friendly control panel for Govee outdoor lights. It runs on a computer at home
 - **One page for everything**, on phone and desktop: on/off, brightness, colour, white, per-segment painting.
 - **Govee scenes**: built-in scenes, plus the DIY scenes and snapshots you made in the Govee app.
 - **Looks**: your own colour designs (a palette plus a pattern), built from a colour picker or a photo.
+- **Describe a look** (optional): type what you want, such as "cosy autumn evening", and get designs to preview, adjust and save.
 - **Zones**: named groups of lights such as "Front yard".
 - **Schedules**: clock or sunrise/sunset times with offsets, days of the week, an optional turn-off time, and yearly date ranges for seasonal lighting.
 - **AI agent access**: a built-in MCP server so an assistant such as Claude can control the lights.
@@ -56,6 +57,16 @@ To use it away from home, put the Mac and your phone on a private network such a
 
 Anyone on your network can open the page. To require a passphrase, set `ACCESS_TOKEN=` in `.env` and restart. The same value protects the API and the MCP endpoint.
 
+## Describe a look
+
+With an Anthropic API key, the look editor gains a box where you describe what you want. It returns three designs; pick one to load it into the editor, then adjust, try it on the lights and save it like any other look. Follow-up requests such as "warmer, less purple" refine the look you are editing. Because looks are still, it also points out built-in animated Govee scenes that fit the description.
+
+1. Create an API key in the [Claude Console](https://platform.claude.com).
+2. Add it to `.env` as `ANTHROPIC_API_KEY=` and restart Afterglow.
+3. Open **Looks → Describe**, or use the box at the top of any look you are editing.
+
+Each request is a call to Claude (`claude-opus-5-5`) billed to your Anthropic account. What is sent: your description, the look being edited, how many lights and segments you have, and the names of the built-in scenes. Light names, zones and your location are not sent. Everything else in Afterglow works without a key.
+
 ## AI agents
 
 Afterglow serves MCP at `http://<host>:4680/mcp`. For Claude Code:
@@ -97,5 +108,6 @@ npm test
 | `server/queue.ts` | Per-light command pacing and retries |
 | `server/scheduler.ts` | Schedule times, including sunrise and sunset |
 | `server/mcp.ts` | MCP tools |
+| `server/ai.ts` | Look ideas from a description, via the Claude API |
 | `shared/` | Types, colour maths and look patterns used by both sides |
 | `web/src/` | The React app |

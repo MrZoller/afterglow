@@ -1,6 +1,7 @@
 import os from 'node:os';
 import express from 'express';
 import type { Snapshot, Status } from '../shared/types';
+import { aiEnabled } from './ai';
 import { config } from './config';
 import { GoveeCloud } from './govee/cloud';
 import { startFakeGovee } from './govee/fake';
@@ -32,6 +33,7 @@ async function main() {
       sun: sun ? { sunrise: sun.sunrise.getTime(), sunset: sun.sunset.getTime() } : null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       authRequired: !!config.accessToken,
+      ai: aiEnabled(),
       version: config.version,
     };
   };

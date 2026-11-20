@@ -54,6 +54,20 @@ export const scheduleSchema = z.object({
   action: actionSchema,
 });
 
+export const suggestSchema = z.object({
+  prompt: z.string().trim().min(1, 'Describe what you would like').max(500),
+  current: z
+    .object({
+      name: z.string().max(60).default(''),
+      colors: z.array(rgb).min(1).max(8),
+      pattern: z.enum(['solid', 'perLight', 'gradient', 'blocks', 'alternate', 'custom']),
+      brightness: z.number().int().min(1).max(100).nullable().default(null),
+    })
+    .nullable()
+    .optional(),
+  targets: targets.default(['all']),
+});
+
 export const groupSchema = z.object({ name, deviceIds: z.array(z.string()).max(100) });
 
 export const settingsSchema = z.object({

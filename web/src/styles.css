@@ -1395,6 +1395,38 @@ select.input {
   gap: 10px;
 }
 
+.assist {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.assist .option {
+  background: var(--surface);
+}
+
+.assist .option[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.assist-scenes {
+  display: grid;
+  gap: 8px;
+}
+
+.assist-off {
+  display: block;
+  line-height: 1.6;
+}
+
+.assist-off svg {
+  vertical-align: -2px;
+  color: var(--accent);
+}
+
 /* ---------- Schedules ---------- */
 .schedule {
   display: flex;

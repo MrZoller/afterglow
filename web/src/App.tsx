@@ -61,7 +61,7 @@ export function App() {
   const live = useApp((s) => s.live);
   const [tab, setTab] = useTab();
   const [panel, setPanel] = useState<string | null>(null);
-  const [lookEdit, setLookEdit] = useState<{ look: Look | null; tryOn: string } | null>(null);
+  const [lookEdit, setLookEdit] = useState<{ look: Look | null; tryOn: string; assist?: boolean } | null>(null);
   const [zoneEdit, setZoneEdit] = useState<string | null>(null);
 
   useEffect(() => void start(), []);
@@ -98,13 +98,13 @@ export function App() {
         {live && !snap.status.connected && snap.devices.length > 0 && <div className="banner error">Can’t reach Govee right now: {snap.status.error ?? 'unknown problem'}</div>}
 
         {tab === 'lights' && <LightsView open={setPanel} newZone={() => setZoneEdit('new')} />}
-        {tab === 'looks' && <LooksView edit={(look) => setLookEdit({ look, tryOn: 'all' })} />}
+        {tab === 'looks' && <LooksView edit={(look, assist) => setLookEdit({ look, tryOn: 'all', assist })} />}
         {tab === 'schedules' && <SchedulesView />}
         {tab === 'settings' && <SettingsView editZone={setZoneEdit} />}
       </main>
 
       {panel && <ControlPanel target={panel} onClose={closePanel} editLook={(look, tryOn) => setLookEdit({ look, tryOn })} editZone={setZoneEdit} />}
-      {lookEdit && <LookEditor look={lookEdit.look} tryOn={lookEdit.tryOn} onClose={() => setLookEdit(null)} />}
+      {lookEdit && <LookEditor look={lookEdit.look} tryOn={lookEdit.tryOn} assist={lookEdit.assist} onClose={() => setLookEdit(null)} />}
       {zoneEdit && <ZoneEditor id={zoneEdit} onClose={() => setZoneEdit(null)} />}
       <Toasts />
     </div>
