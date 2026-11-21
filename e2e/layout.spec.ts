@@ -11,6 +11,12 @@ import { expect, test, type App } from './fixtures';
 async function fill(app: App): Promise<void> {
   const snap = await app.snapshot();
   const backYard = snap.groups.find((g) => g.name === 'Back yard')!;
+  // A light that dropped off the network and came back, so its row in Settings has the extra line.
+  // First, because a light is not re-read while a change of our own is still landing on it.
+  await app.simulate('Front path lights', { offline: true });
+  await app.api('POST', '/rescan');
+  await app.simulate('Front path lights', { offline: false });
+  await app.api('POST', '/rescan');
   await app.api('POST', `/schedules/${snap.schedules[0].id}/run`);
   await app.api('POST', '/control', { targets: ['all'], action: { type: 'look', lookId: 'starter-sunset' } });
   await app.api('POST', '/control', { targets: ['all'], action: { type: 'brightness', value: 60 } });
@@ -51,6 +57,12 @@ for (const [device, viewport] of [
         for (const height of await heights(page, '.badge')) expect(height).toBeLessThanOrEqual(30);
         for (const height of await heights(page, '.activity li')) expect(height).toBeLessThanOrEqual(70);
         expect(await overflow(page)).toBeLessThanOrEqual(0);
+      });
+
+      await test.step('the note about a light dropping off the network is a line or two', async () => {
+        await expect(page.locator('.device-row .dropouts')).toHaveCount(1);
+        for (const height of await heights(page, '.device-row .dropouts')) expect(height).toBeLessThanOrEqual(50);
+        for (const height of await heights(page, '.settings .toggle')) expect(height).toBeLessThanOrEqual(40);
       });
 
       await test.step('no section scrolls sideways', async () => {

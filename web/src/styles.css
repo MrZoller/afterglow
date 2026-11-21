@@ -1478,6 +1478,15 @@ select.input {
   color: var(--ok);
 }
 
+.schedule .verify.trying {
+  color: var(--accent);
+}
+
+.schedule .verify.trying svg {
+  flex: none;
+  margin-top: 2px;
+}
+
 .schedule .error-text {
   align-items: flex-start;
 }
@@ -1598,6 +1607,14 @@ select.input {
 .device-row small {
   color: var(--text-3);
   padding-left: 2px;
+}
+
+.device-row small.dropouts {
+  color: var(--text-2);
+}
+
+.device-row small.dropouts.now {
+  color: var(--danger);
 }
 
 .order-row {

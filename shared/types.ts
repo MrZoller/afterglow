@@ -66,6 +66,14 @@ export interface Device {
   /** Commands waiting to be sent. */
   pending: number;
   error: string | null;
+  /** How often the light dropped off the network in the last seven days, and the most recent time. */
+  dropouts: { week: number; last: Dropout | null };
+}
+
+/** A stretch of time during which a light could not be reached. `to` is null while it is still unreachable. */
+export interface Dropout {
+  from: number;
+  to: number | null;
 }
 
 export interface Group {
@@ -160,6 +168,11 @@ export interface ScheduleView extends Schedule {
   next: { at: number; kind: 'start' | 'end' } | null;
   /** True while the lights are still being checked after a turn-off. */
   checkingOff: boolean;
+  /**
+   * Lights (by name) that missed what this schedule last did and will be brought into
+   * line when they can be reached: `start` to show what it shows, `end` to be switched off.
+   */
+  catchingUp: { kind: 'start' | 'end'; lights: string[] } | null;
   /** Why the schedule cannot run, e.g. a sun time without a location. */
   problem: string | null;
 }
@@ -168,6 +181,11 @@ export interface Settings {
   location: { lat: number; lon: number; label: string } | null;
   /** Colours saved from the picker. */
   swatches: RGB[];
+  /**
+   * Whether a schedule that was missed (this computer was off, or a light could not be
+   * reached) is carried out late. On unless set to false.
+   */
+  catchUp?: boolean;
 }
 
 export type Source = 'app' | 'schedule' | 'agent';
@@ -195,6 +213,8 @@ export interface Status {
   ai: boolean;
   /** Local network control: off, or on with any problem that stops it working. */
   lan: { enabled: boolean; error: string | null };
+  /** Phone notifications: whether an address is set, when one last went out, and why the last one failed. */
+  notify: { enabled: boolean; lastAt: number | null; error: string | null };
   /** Where the app can be opened from: this computer, the home network, and Tailscale when present. */
   addresses: { kind: 'computer' | 'network' | 'tailscale'; label: string; url: string }[];
   version: string;

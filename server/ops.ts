@@ -81,6 +81,7 @@ export const settingsSchema = z.object({
     .nullable()
     .optional(),
   swatches: z.array(rgb).max(24).optional(),
+  catchUp: z.boolean().optional(),
 });
 
 export class Ops {
@@ -192,6 +193,7 @@ export class Ops {
     const settings = this.store.data.settings;
     if (data.location !== undefined) settings.location = data.location;
     if (data.swatches !== undefined) settings.swatches = data.swatches;
+    if (data.catchUp !== undefined) settings.catchUp = data.catchUp;
     this.store.save();
     this.changed('settings', 'schedules', 'status');
     return settings;

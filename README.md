@@ -9,6 +9,7 @@ A friendly control panel for Govee outdoor lights. It runs on a computer at home
 - **Describe a look** (optional): type what you want, such as "cosy autumn evening", and get designs to preview, adjust and save.
 - **Zones**: named groups of lights such as "Front yard". Lights mounted end to end can be joined so they behave as one long light.
 - **Schedules**: clock or sunrise/sunset times with offsets, days of the week, an optional turn-off time, and yearly date ranges for seasonal lighting.
+- **Schedules that are followed up**: every start and turn-off is checked and repeated for any light that missed it, missed schedules are caught up, and your phone can be told when a light is still on.
 - **AI agent access**: a built-in MCP server so an assistant such as Claude can control the lights.
 
 Without an API key it runs in **demo mode** with eight simulated lights, so you can try it first.
@@ -62,7 +63,7 @@ If a light stops answering locally, its commands go through the cloud until it r
 ./scripts/install-mac.sh
 ```
 
-This starts Afterglow whenever you log in and restarts it if it stops. Schedules only run while the Mac is on and awake, so in **System Settings → Energy** turn on "Prevent automatic sleeping when the display is off", and enable automatic login if the Mac may reboot unattended. macOS may ask once whether Node may accept incoming connections; allow it. To undo, run `./scripts/uninstall-mac.sh`.
+This starts Afterglow whenever you log in and restarts it if it stops. Schedules only run on time while the Mac is on and awake (one that was missed is carried out late, when the Mac is next awake), so in **System Settings → Energy** turn on "Prevent automatic sleeping when the display is off", and enable automatic login if the Mac may reboot unattended. macOS may ask once whether Node may accept incoming connections; allow it. To undo, run `./scripts/uninstall-mac.sh`.
 
 ### Use it from your phone
 
@@ -84,6 +85,16 @@ Then open `https://<machine>.<tailnet>.ts.net` with no port.
 ### Lock it with a passphrase
 
 Anyone on your network can open the page. To require a passphrase, set `ACCESS_TOKEN=` in `.env` and restart. The same value protects the API and the MCP endpoint.
+
+### Get told on your phone
+
+Afterglow can send a notification when a light is still on after a schedule, has not started, or a schedule ran late. It uses [ntfy](https://ntfy.sh), a free notification service with phone apps.
+
+1. Install the ntfy app on your phone and subscribe to a topic. Make up a long name nobody could guess, such as `afterglow-` followed by a dozen random letters: anyone who knows the name can read what is sent to it.
+2. Add `NOTIFY_URL=https://ntfy.sh/<that name>` to `.env` and restart.
+3. In Settings → **Missed schedules**, press **Send a test**.
+
+The messages name your lights and schedules and pass through ntfy's servers. To keep them on your own network, run your own ntfy server and use its address; if the topic needs a token, set `NOTIFY_TOKEN` as well. Any other service that accepts a plain `POST` with the message as its body will also work.
 
 ## Lights joined end to end
 
@@ -137,7 +148,9 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 - **Some state is remembered, not read.** Govee reports power, brightness and a single colour, but not segment colours or the running scene. Afterglow shows what it last applied, and falls back to what Govee reports when it sees the colour change from elsewhere.
 - **Movement is slow by design.** On a light reached locally, a look that shows it in one colour (Solid, One per light) moves in tiny steps every 5 to 60 seconds. Through the cloud a moving look takes a small step every minute or so, never more than about 75 requests per light per hour, and pauses for the day if the account gets close to Govee's daily limit. It keeps going until you apply something else, hold it, or switch the lights off, and it carries on after a restart. Fast effects such as chases and flicker come from Govee's own scenes, because the API cannot send colours quickly enough.
 - **DIY scenes and snapshots** are created in the Govee app. Use the reload button on the Scenes tab to pick up new ones.
-- **Turn-offs are checked.** After a schedule switches lights off, Afterglow asks each light whether it is really off: 1, 3, 10, 30 and 60 minutes later, stopping as soon as all are. A light that is still on, or cannot be reached, is sent "off" again each time. The schedule's card then shows "confirmed off", or names the lights that are still on or unreachable, which are also marked on the Lights page. A light stops being checked as soon as it is seen off or anything else is applied to it, so turning one back on yourself is respected. Lights reached locally answer for themselves; for the rest the check relies on what Govee's cloud reports.
+- **Schedules are followed up.** After a schedule starts or switches lights off, Afterglow asks each light whether it obeyed: 1, 3, 10, 30 and 60 minutes later, stopping as soon as all have. A light that has not, or cannot be reached, is sent the same thing again each time. After a turn-off the schedule's card shows "confirmed off", or names the lights that are still on or unreachable, which are also marked on the Lights page. A light stops being checked as soon as it is seen to be right or anything else is applied to it, so turning one back on yourself is respected. Lights reached locally answer for themselves; for the rest the check relies on what Govee's cloud reports.
+- **Missed schedules are caught up.** A light still not right after that hour is tried every ten minutes for up to a day, so one that returns after a power cut or a Wi-Fi drop is brought into line then, with its own share of the design. If the computer was off or asleep when a schedule was due, each light is given whatever the schedules last said it should be doing, provided that is less than 24 hours old. Lights you have used in Afterglow since are left alone. Settings → Missed schedules has a switch to turn this off.
+- **Dropouts are recorded.** Settings → Lights notes how often each light has been unreachable in the last week, when and for how long. Frequent dropouts usually mean weak Wi-Fi at the light, which is also the usual reason a light misses a command.
 - **Overlapping schedules**: when two start at the same minute, one limited to a time of year wins over an everyday one.
 - **Backups are automatic.** Looks, zones, schedules, settings and how lights are named and arranged are copied every day into `data/backups` and kept for two weeks. Settings → Backups restores one, downloads the current setup as a file, or restores from a file (also the way to move to another computer). The setup being replaced is saved first, so a restore can be undone. Backups never contain the Govee key or passphrase. To keep the daily copies off the computer as well, set `BACKUP_DIR` in `.env` to a folder that syncs elsewhere, such as iCloud Drive.
 
@@ -175,7 +188,9 @@ Browser tests against the app in demo mode. The first time, run `npx playwright 
 | `server/govee/fake-lan.ts` | Simulated local-network lights for demo mode and the tests |
 | `server/hub.ts` | Lights, their state, and turning actions into commands |
 | `server/queue.ts` | Per-light command pacing and retries |
-| `server/scheduler.ts` | Schedule times, including sunrise and sunset |
+| `server/scheduler.ts` | Schedule times, including sunrise and sunset, and carrying out missed runs |
+| `server/verify.ts` | Checks that lights did what a schedule asked, and keeps trying those that did not |
+| `server/notify.ts` | Phone notifications |
 | `server/animator.ts` | Advances moving looks step by step |
 | `server/mcp.ts` | MCP tools |
 | `server/ai.ts` | Look ideas from a description, via the Claude API |

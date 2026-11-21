@@ -18,7 +18,7 @@ With no `GOVEE_API_KEY` the app runs in demo mode against `server/govee/fake.ts`
 - Server behaviour is covered by `test/`. Tests run the real clients against the simulators; add to the simulators rather than mocking.
 - Browser behaviour is covered by `e2e/` (Playwright). Each test starts its own demo server; see "Browser tests" in CONTRIBUTING.md. For any change under `web/`, add or extend a test there and confirm the result through `app.snapshot()` as well as on the page. Look at screens with content in them, not only empty ones; `e2e/layout.spec.ts` exists for that.
 - In a cloud session the browser is preinstalled and matches the pinned `@playwright/test` version. Do not run `playwright install` there, and do not change the pinned version without checking the installed browser still matches.
-- Things that take real time (a cloud step of a moving look, a schedule ending, a turn-off check) are covered twice: by unit tests with injected clocks, and by `@slow` browser tests in real time.
+- Things that take real time (a cloud step of a moving look, a schedule ending, a turn-off check, a light catching up) are covered twice: by unit tests with injected clocks, and by `@slow` browser tests in real time. The follow-up checks after a schedule can be sped up for a browser test with `AFTERGLOW_CHECK_SCALE`; see CONTRIBUTING.md.
 
 ## Things that have gone wrong before
 
@@ -26,6 +26,7 @@ With no `GOVEE_API_KEY` the app runs in demo mode against `server/govee/fake.ts`
 - A checkbox bound straight to server state flicked back until the server confirmed. Controls that save on change keep their own state and sync from the server.
 - A test looked for the word "watches" and matched "swatches". Match quoted keys, not substrings.
 - Help text and README are written from simulated behaviour. When real-hardware behaviour differs, fix the text as well as the code.
+- Two seconds after a failed command the hub re-read the light and cleared what it showed, even when something newer had been applied in between. Anything that acts later on a light's behalf must check nothing newer has happened.
 
 ## Not yet confirmed on real lights
 

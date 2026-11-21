@@ -31,6 +31,7 @@ const documentSchema = z.object({
   settings: z.object({
     location: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180), label: z.string().max(60).default('') }).nullable(),
     swatches: z.array(rgb).max(24),
+    catchUp: z.boolean().optional(),
   }),
   order: z.array(z.string()).max(500).default([]),
   seeded: z.array(z.string()).max(200).optional(),
@@ -159,7 +160,7 @@ export class Backups {
     for (const light of doc.lights) if (known.has(light.id)) this.hub.update(light.id, { name: light.name, reversed: light.reversed });
     this.hub.setOrder(doc.order);
 
-    // Movement and turn-off checks in progress refer to the setup being replaced.
+    // Movement and schedule follow-ups in progress refer to the setup being replaced.
     this.hub.animator.release([...known]);
     d.watches = [];
     this.store.log({ source: 'app', ok: true, text: `Restored a backup from ${new Date(doc.createdAt).toLocaleString()}` });

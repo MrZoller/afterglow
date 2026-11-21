@@ -21,6 +21,13 @@ export interface App {
   light(name: string): Promise<Device>;
   /** The colours a light is showing, one per segment. */
   colors(name: string): Promise<RGB[]>;
+  /**
+   * Stops the app and starts it again on the same data, as after a power cut or a restart
+   * of the computer. `edit` can change the saved data while it is stopped.
+   */
+  restart(edit?: (data: any) => void): Promise<void>;
+  /** Makes a simulated light drop off the network, or stop obeying, and back. */
+  simulate(name: string, change: { offline?: boolean; ignoring?: boolean }): Promise<void>;
 }
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -46,14 +53,19 @@ export const test = base.extend<{ appEnv: Record<string, string>; app: App }>({
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'afterglow-e2e-'));
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
-    const child = spawn(process.execPath, [built], {
-      cwd: root,
-      env: { ...process.env, AFTERGLOW_NO_ENV_FILE: '1', DEMO: '1', GOVEE_API_KEY: '', ACCESS_TOKEN: '', ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', BACKUP_DIR: '', LAN: '', PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ...appEnv },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
     let output = '';
-    child.stdout.on('data', (chunk) => (output += chunk));
-    child.stderr.on('data', (chunk) => (output += chunk));
+    const launch = () => {
+      const started = spawn(process.execPath, [built], {
+        cwd: root,
+        env: { ...process.env, AFTERGLOW_NO_ENV_FILE: '1', DEMO: '1', GOVEE_API_KEY: '', ACCESS_TOKEN: '', ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', NOTIFY_URL: '', NOTIFY_TOKEN: '', AFTERGLOW_CHECK_SCALE: '', BACKUP_DIR: '', LAN: '', PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ...appEnv },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      started.stdout.on('data', (chunk) => (output += chunk));
+      started.stderr.on('data', (chunk) => (output += chunk));
+      return started;
+    };
+    let child = launch();
+    const stopped = () => new Promise((resolve) => (child.exitCode !== null ? resolve(null) : child.once('exit', resolve)));
 
     const headers = (body: unknown) => ({
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -72,14 +84,17 @@ export const test = base.extend<{ appEnv: Record<string, string>; app: App }>({
       return found;
     };
 
-    try {
-      // Ready once it answers and has found the simulated lights.
-      await expect
+    // Ready once it answers and has found the simulated lights.
+    const ready = () =>
+      expect
         .poll(async () => (child.exitCode !== null ? 'exited' : await snapshot().then((s) => s.devices.length, () => 0)), { timeout: 20_000 })
         .toBe(8)
         .catch(() => {
           throw new Error(`The app did not start.\n${output}`);
         });
+
+    try {
+      await ready();
       await use({
         url,
         api,
@@ -90,10 +105,24 @@ export const test = base.extend<{ appEnv: Record<string, string>; app: App }>({
           const a = d.state.appearance;
           return a.mode === 'segments' ? a.colors : a.mode === 'color' ? Array<RGB>(Math.max(1, d.caps.segments)).fill(a.rgb) : [];
         },
+        restart: async (edit) => {
+          // The app writes its data out when asked to stop.
+          child.kill();
+          await stopped();
+          if (edit) {
+            const file = path.join(dataDir, 'demo.json');
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            edit(data);
+            fs.writeFileSync(file, JSON.stringify(data));
+          }
+          child = launch();
+          await ready();
+        },
+        simulate: async (name, change) => void (await api('POST', '/demo/lights', { name, ...change })),
       });
     } finally {
       child.kill();
-      await new Promise((resolve) => (child.exitCode !== null ? resolve(null) : child.once('exit', resolve)));
+      await stopped();
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
   },

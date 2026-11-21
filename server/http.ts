@@ -9,6 +9,7 @@ import type { Backups } from './backup';
 import { config } from './config';
 import { GoveeError } from './govee/cloud';
 import { HttpError, type Hub } from './hub';
+import type { Notifier } from './notify';
 import { suggestLooks } from './ai';
 import { controlSchema, suggestSchema, type Ops } from './ops';
 import type { Scheduler } from './scheduler';
@@ -18,6 +19,9 @@ export interface Services {
   ops: Ops;
   scheduler: Scheduler;
   backups: Backups;
+  notifier: Notifier;
+  /** Present in demo mode: changes how a simulated light behaves. */
+  demo?: { light(name: string, change: { offline?: boolean; ignoring?: boolean }): void };
   snapshot(): Snapshot;
 }
 
@@ -123,7 +127,7 @@ export class Events {
 }
 
 export function createApi(services: Services, events: Events): express.Router {
-  const { hub, ops, scheduler, backups } = services;
+  const { hub, ops, scheduler, backups, notifier } = services;
   const api = express.Router();
   api.use(express.json({ limit: '1mb' }));
   api.use(sameOrigin);
@@ -247,6 +251,24 @@ export function createApi(services: Services, events: Events): express.Router {
   });
 
   api.put('/settings', (req, res) => void res.json(ops.updateSettings(req.body)));
+
+  /** Sends a notification now, so the owner can see that it reaches their phone. */
+  api.post('/notify/test', async (_req, res) => {
+    if (!notifier.enabled) throw new HttpError(400, notifier.error ?? 'Notifications are not set up');
+    await notifier.test().catch((err: Error) => {
+      throw new HttpError(502, `The test notification did not get through: ${err.message}`);
+    });
+    res.json({ ok: true });
+  });
+
+  if (services.demo) {
+    /** Demo mode only: makes a simulated light drop off the network, or stop obeying, and back. */
+    api.post('/demo/lights', (req, res) => {
+      const { name, ...change } = z.object({ name: z.string(), offline: z.boolean().optional(), ignoring: z.boolean().optional() }).parse(req.body);
+      services.demo!.light(name, change);
+      res.json({ ok: true });
+    });
+  }
 
   /** The current setup as a file to keep somewhere safe. */
   api.get('/backup', (_req, res) => {

@@ -4,7 +4,7 @@ import type { Action, SceneChoice, Schedule, ScheduleView, Status, TimeSpec } fr
 import { ColorPad } from '../components/ColorPad';
 import { TargetPicker } from '../components/TargetPicker';
 import { Empty, Field, Group, Segmented, Sheet, Slider, Toggle } from '../components/ui';
-import { AlertIcon, CheckIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from '../icons';
+import { AlertIcon, CheckIcon, ClockIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from '../icons';
 import { api, attempt, toast, useSnap } from '../store';
 import { describeAction, describeDays, describeNext, describeSeason, describeTargets, describeTime, describeWhen, formatClock } from '../util';
 
@@ -58,7 +58,8 @@ export function SchedulesView() {
                     <p className="next">{s.enabled ? (describeNext(s.next) ?? 'Not due to run') : 'Paused'}</p>
                   )}
                   {s.checkingOff ? (
-                    <p className="verify">Checking that the lights turned off…</p>
+                    // While a light is known to be behind, the line below says more than this one would.
+                    s.catchingUp ? null : <p className="verify">Checking that the lights turned off…</p>
                   ) : s.lastOff ? (
                     <p className={s.lastOff.ok ? 'verify ok' : 'error-text'}>
                       {s.lastOff.ok ? <CheckIcon size={14} /> : <AlertIcon size={14} />}
@@ -67,6 +68,14 @@ export function SchedulesView() {
                       </span>
                     </p>
                   ) : null}
+                  {s.catchingUp && (
+                    <p className="verify trying">
+                      <ClockIcon size={14} />
+                      <span>
+                        Still trying to {s.catchingUp.kind === 'end' ? 'turn off' : 'start'} {s.catchingUp.lights.join(', ')}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <div className="schedule-actions">
                   <button

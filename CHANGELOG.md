@@ -6,9 +6,32 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Added
 
+- **Catching up on missed schedules.** If the computer was off or asleep when a schedule was due, Afterglow carries it out when it is next running, provided it is less than 24 hours old. Each light gets whatever the schedules last said it should be doing, and lights used in the app since are left alone. Settings → Missed schedules has a switch to turn this off.
+- **Schedule starts are followed up**, the way turn-offs already were: each light is asked 1, 3, 10, 30 and 60 minutes later whether it came on, and sent the schedule again if not. A light that joins late gets its own share of the design, including its part of a run of joined lights, and joins a moving look where the others have got to.
+- **A light still not right after the hour is tried every ten minutes for up to a day**, for starts and turn-offs alike, so one that returns after a power cut or a Wi-Fi drop is brought into line then. The schedule's card says "Still trying to turn off" or "Still trying to start" and names the lights.
+- **Phone notifications** through ntfy (set `NOTIFY_URL` in `.env`): when a light is still on, or has not started, ten minutes after a schedule; when that light comes right; and when a schedule ran late. Settings → Missed schedules shows whether they are set up and has a **Send a test** button.
+- **A record of lights dropping off the network.** Settings → Lights says how often each light was unreachable in the last seven days, when the last time was and how long it lasted.
 - Browser tests (`e2e/`) covering the main flows on every screen, run against the app in demo mode.
 - Continuous integration on GitHub: type-check, build, server tests and browser tests on every push to `main` and on pull requests.
 - MIT licence.
+
+### Changed
+
+- A schedule missed by more than ten minutes used to be skipped. It is now carried out late (see above).
+- When several schedules come due together, each light is sent only the one that wins, rather than each in turn.
+
+### Fixed
+
+- Two seconds after a command failed, the app re-read the light and cleared what it showed, even if something newer had been applied in between.
+
+### Known gaps
+
+These additions were developed against simulated lights and a stand-in for the notification service:
+
+- Notifications have not been sent through the real ntfy service or seen on a phone. The format follows ntfy's documentation.
+- Whether Govee's cloud refuses a command for a light that is off the network, or accepts it and does nothing. Both are followed up, but only the simulated versions have been seen.
+- How quickly, and how reliably, Govee reports a light as offline and as back. The dropout record and catching up both depend on it for lights not reached locally.
+- What a light does when its power returns after a cut (stays off, or comes back as it was).
 
 ## 0.1.0 — 2026-11-21
 

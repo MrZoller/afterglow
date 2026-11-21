@@ -132,6 +132,8 @@ function build(services: Services): McpServer {
           reached: d.local ? 'local network' : 'cloud',
           segments: d.caps.segments,
           online: d.state.online,
+          // How often it could not be reached lately; several a week usually means weak Wi-Fi at the light.
+          dropouts_last_7_days: d.dropouts.week || undefined,
           problem: d.error ?? undefined,
         })),
         zones: groups.map((g) => ({
@@ -262,6 +264,8 @@ function build(services: Services): McpServer {
           next: s.next ? `${s.next.kind === 'end' ? 'turns off' : 'starts'} ${new Date(s.next.at).toLocaleString()}` : null,
           // Whether the lights were confirmed off the last time this schedule switched them off.
           last_turn_off: s.checkingOff ? 'still being checked' : s.lastOff ? `${s.lastOff.ok ? 'confirmed' : 'problem'}: ${s.lastOff.text} (${new Date(s.lastOff.at).toLocaleString()})` : undefined,
+          // Lights that missed what the schedule last did and are still being tried.
+          still_trying: s.catchingUp ? `to ${s.catchingUp.kind === 'end' ? 'turn off' : 'start'} ${s.catchingUp.lights.join(', ')}` : undefined,
           problem: s.problem ?? undefined,
         })),
       ),

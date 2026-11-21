@@ -181,7 +181,46 @@ export const HELP: HelpTopic[] = [
         answer: [
           'After a schedule switches lights off, the app asks each light whether it is off, about 1, 3, 10, 30 and 60 minutes later, and sends “off” again to any that is still on or cannot be reached. It stops as soon as every light has been seen off.',
           'The schedule’s card then says **confirmed off**, or names the lights that are still on or unreachable; those lights also get a red note on [Lights](#/lights).',
+          'A light that is still not off after the hour is tried again every ten minutes for the rest of the day, so one that comes back after a power cut or a Wi-Fi drop is switched off then. The card says **Still trying to turn off** and names it.',
           'A light stops being checked as soon as it is seen off, or as soon as you do anything else with it in this app, so turning one back on yourself is respected.',
+        ],
+      },
+      {
+        question: 'What if a light cannot be reached when a schedule starts?',
+        answer: [
+          'The start of a schedule is followed up the same way as its end. Each light is asked, about 1, 3, 10, 30 and 60 minutes later, whether it came on, and one that did not is sent the schedule again; after the hour it is tried every ten minutes, until the schedule ends or for up to 24 hours. The card says **Still trying to start** and names it.',
+          'A light that joins late gets the part of the design it would have had, including its share of a run of lights joined end to end, and joins a moving look where the others have got to.',
+          'It is left alone if you have done anything else with it in the meantime, or if the schedule has been changed or paused since.',
+        ],
+      },
+      {
+        question: 'What if this computer was off or asleep when a schedule was due?',
+        answer: [
+          'When Afterglow is next running it carries out what was missed, as long as it is less than 24 hours old. Each light gets whatever the schedules last said it should be doing: if both the start and the end of an evening were missed, the lights are simply switched off.',
+          '**Recent activity** in [Settings](#/settings) says how late it ran. A light you have used in the app since the missed time is left alone. Changes made in the Govee app cannot be seen, so they may be overridden.',
+          'To have missed schedules skipped instead, turn off **Catch up** under **Missed schedules** in Settings. Better still, set the computer never to sleep.',
+        ],
+      },
+      {
+        question: 'How do I get told on my phone when something goes wrong?',
+        answer: [
+          'Afterglow can send a notification through ntfy, a free notification service with apps for iPhone and Android.',
+          {
+            steps: [
+              'Install the **ntfy** app on your phone.',
+              'In it, subscribe to a topic. Make up a long name nobody could guess, such as `afterglow-` followed by a dozen random letters: anyone who knows the name can read what is sent to it.',
+              'On the computer running Afterglow, add `NOTIFY_URL=https://ntfy.sh/` followed by that name to the `.env` file, and restart.',
+              'Under **Missed schedules** in [Settings](#/settings), press **Send a test**.',
+            ],
+          },
+          {
+            list: [
+              'You are told when a light is still on ten minutes after a schedule ended, or has not started ten minutes after one began. The light is tried again several times first, so one that was merely slow does not bother you.',
+              'You are told again when that light comes right.',
+              'You are told when a schedule ran late because this computer was off or asleep.',
+            ],
+          },
+          'The messages name your lights and schedules and pass through ntfy’s servers. To keep them private, run your own ntfy server and use its address instead; if the topic needs a token, put it in `.env` as `NOTIFY_TOKEN`.',
         ],
       },
       {
@@ -193,7 +232,7 @@ export const HELP: HelpTopic[] = [
         answer: [
           {
             list: [
-              'Schedules run on the computer hosting Afterglow, so it must be on and awake. A start missed by more than ten minutes is skipped rather than run late.',
+              'Schedules run on the computer hosting Afterglow, so it must be on and awake. If it was not, the schedule is carried out late once it is, unless **Catch up** is switched off in [Settings](#/settings) or more than 24 hours have passed.',
               'Check the schedule is switched on and that its card does not show a problem, such as a missing location or a deleted look.',
               'If the Govee app has schedules for the same lights, they may be undoing this one. Turn those off.',
             ],
@@ -298,7 +337,21 @@ export const HELP: HelpTopic[] = [
       {
         question: 'A light has a red message under it.',
         answer: [
-          'The last command to that light failed, or a scheduled turn-off could not be confirmed. The message says which. It clears the next time a command to that light succeeds, so try switching it again; if it keeps failing, check the light has power and is on Wi-Fi.',
+          'The last command to that light failed, or the light did not do what a schedule asked. The message says which. It clears the next time a command to that light succeeds, so try switching it again; if it keeps failing, check the light has power and is on Wi-Fi.',
+        ],
+      },
+      {
+        question: 'A light keeps dropping off the network.',
+        answer: [
+          'Under **Lights** in [Settings](#/settings), a light that has been unreachable in the last week says how many times, when the last one was and how long it lasted. A light that is unreachable now says since when.',
+          {
+            list: [
+              'Several dropouts a week usually mean weak Wi-Fi where the light’s control box sits. Most Govee lights use the 2.4 GHz band only. Moving the router or adding an access point nearer the light is the usual cure.',
+              'Every light dropping out at the same time points at the router or the internet connection instead.',
+              'After a power cut, a light can come back before the Wi-Fi does and fail to rejoin. Switching it off and on at the plug normally brings it back.',
+            ],
+          },
+          'The record is built from what the lights and Govee report, checked every few minutes, so a dropout shorter than about ten minutes can go unnoticed.',
         ],
       },
       {

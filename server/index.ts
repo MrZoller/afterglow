@@ -7,10 +7,11 @@ import { GoveeCloud } from './govee/cloud';
 import { startFakeGovee } from './govee/fake';
 import { startFakeLan } from './govee/fake-lan';
 import { GoveeLan } from './govee/lan';
-import { Hub } from './hub';
+import { HttpError, Hub } from './hub';
 import { createApi, Events, requireAuth, sameOrigin, staticApp, type Services } from './http';
 import { mcpHandler } from './mcp';
 import { accessAddresses } from './network';
+import { Notifier } from './notify';
 import { Ops } from './ops';
 import { Scheduler, sunTimes } from './scheduler';
 import { Store } from './store';
@@ -23,15 +24,34 @@ async function main() {
   const cloud = new GoveeCloud({ apiKey: fake ? 'demo' : config.apiKey, baseUrl: fake?.url ?? config.apiBase, onRequest: () => store.countRequest() });
 
   let lan: GoveeLan | null = null;
+  let fakeLan: Awaited<ReturnType<typeof startFakeLan>> | null = null;
   if (config.lan) {
     if (fake) {
       // In the demo the rope lights also answer locally, so both paths can be seen.
-      const fakeLan = await startFakeLan(fake.lights.filter((l) => l.sku === 'H61A9'));
+      fakeLan = await startFakeLan(fake.lights.filter((l) => l.sku === 'H61A9'));
       lan = new GoveeLan({ scanAddress: '127.0.0.1', scanPort: fakeLan.scanPort, listenPort: 0 });
     } else lan = new GoveeLan();
     await lan.start();
   }
   const hub = new Hub(cloud, store, lan);
+
+  // Demo mode only: lets a simulated light drop off the network or stop obeying, to see how the app copes.
+  const demo: Services['demo'] = fake
+    ? {
+        light(name, change) {
+          const light = fake.lights.find((l) => l.deviceName === name);
+          if (!light) throw new HttpError(404, 'No simulated light has that name');
+          if (change.offline !== undefined) {
+            if (change.offline) fake.offline.add(light.device);
+            else fake.offline.delete(light.device);
+            if (change.offline) fakeLan?.mute(light.device);
+            else fakeLan?.unmute(light.device);
+          }
+          if (change.ignoring === true) fake.ignoring.add(light.device);
+          else if (change.ignoring === false) fake.ignoring.delete(light.device);
+        },
+      }
+    : undefined;
 
   let addresses = await accessAddresses(config.port, config.host);
 
@@ -50,6 +70,7 @@ async function main() {
       authRequired: !!config.accessToken,
       ai: aiEnabled(),
       lan: { enabled: !!lan, error: lan?.error ?? null },
+      notify: { enabled: notifier.enabled, lastAt: notifier.lastAt, error: notifier.error },
       addresses,
       version: config.version,
     };
@@ -66,10 +87,22 @@ async function main() {
     activity: store.data.activity.slice(0, 50),
   });
   const events = new Events(snapshot);
-  scheduler = new Scheduler(store, hub, () => events.changed('schedules'));
+  const notifier = new Notifier({
+    url: config.notifyUrl,
+    token: config.notifyToken,
+    // Tapping a notification opens the app, by the address most likely to work from a phone.
+    link: () => (addresses.find((a) => a.kind === 'tailscale') ?? addresses.find((a) => a.kind === 'network'))?.url,
+    onFailure: (reason) => {
+      store.log({ source: 'schedule', ok: false, text: 'A notification could not be sent', detail: reason });
+      events.changed('activity');
+    },
+    onChange: () => events.changed('status'),
+  });
+  scheduler = new Scheduler(store, hub, () => events.changed('schedules'), (notice) => notifier.send(notice));
+  scheduler.watcher.scale = config.checkScale;
   const ops = new Ops(store, hub, (...kinds) => events.changed(...kinds));
   const backups = new Backups(store, hub, config.backupDir, config.demo ? 'demo' : 'afterglow', () => events.changed('devices', 'groups', 'looks', 'schedules', 'settings', 'status', 'activity'));
-  const services: Services = { hub, ops, scheduler, backups, snapshot };
+  const services: Services = { hub, ops, scheduler, backups, notifier, demo, snapshot };
 
   hub.on('devices', () => events.changed('devices'));
   hub.on('status', () => events.changed('status'));
@@ -102,6 +135,7 @@ async function main() {
     console.log(`  ${'MCP endpoint:'.padEnd(26)}add /mcp to any address above`);
     if (!config.demo && !hub.connected) console.log(`  ${'Govee problem:'.padEnd(26)}${hub.error}`);
     if (lan?.error) console.log(`  ${'Local control:'.padEnd(26)}unavailable (${lan.error}); using Govee's cloud for everything`);
+    if (notifier.error) console.log(`  ${'Notifications:'.padEnd(26)}${notifier.error}`);
   });
 
   const stop = () => {

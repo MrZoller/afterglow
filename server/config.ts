@@ -30,6 +30,11 @@ export const config = {
   dataDir: env('DATA_DIR') || path.join(root, 'data'),
   /** Where daily backups go. Point it at a synced folder to keep them off this computer too. */
   backupDir: env('BACKUP_DIR') || path.join(env('DATA_DIR') || path.join(root, 'data'), 'backups'),
+  /** Where phone notifications are posted (an ntfy topic address), and a token if the topic is protected. */
+  notifyUrl: env('NOTIFY_URL'),
+  notifyToken: env('NOTIFY_TOKEN'),
+  /** For the browser tests only: shrinks the waits between follow-up checks of a schedule. */
+  checkScale: Number(env('AFTERGLOW_CHECK_SCALE')) || 1,
   webDir: path.join(root, 'dist', 'web'),
   version: '0.1.0',
 };

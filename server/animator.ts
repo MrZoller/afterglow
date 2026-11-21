@@ -81,14 +81,17 @@ export class Animator {
     return this.animations.some((a) => a.lights.some((l) => l.id === deviceId));
   }
 
-  /** Starts moving a look on lights that are already showing its first frame. */
-  begin(look: StoredAnimation['look'], lights: AnimatedLight[], now = Date.now()): void {
+  /**
+   * Starts moving a look on lights that are already showing a frame of it.
+   * @param startedAt when the loop began; a time in the past joins a loop already under way
+   */
+  begin(look: StoredAnimation['look'], lights: AnimatedLight[], startedAt = Date.now(), now = Date.now()): void {
     this.release(lights.map((l) => l.id), false);
     const stored: StoredAnimation['look'] = { name: look.name, colors: look.colors, pattern: look.pattern, segments: look.segments, motion: look.motion };
     this.animations.push({
       id: crypto.randomUUID(),
       look: stored,
-      startedAt: now,
+      startedAt,
       lights: lights.map((l) => ({ ...l, nextAt: now + (this.host.plan(stored, l)?.stepSeconds ?? 60) * 1000 })),
     });
     this.store.save();

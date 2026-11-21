@@ -127,4 +127,22 @@ export function describeTargets(targets: string[], snap: Snapshot): string {
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** "12 minutes", "3 hours", "2 days": how long something lasted, to the nearest sensible unit. */
+export function describeDuration(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 90) return plural(minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? plural(hours, 'hour') : plural(Math.round(hours / 24), 'day');
+}
+
+/** What the record of a light dropping off the network says, or null when it has nothing to report. */
+export function describeDropouts(d: Device, now = Date.now()): string | null {
+  const { week, last } = d.dropouts;
+  if (!last) return null;
+  if (last.to === null) return `Unreachable since ${describeWhen(last.from)}${week > 1 ? ` · ${plural(week, 'dropout')} in the last 7 days` : ''}`;
+  // Older than a week: no longer worth a line.
+  if (week === 0 && now - last.to > 7 * 24 * 3600_000) return null;
+  return `Dropped off the network ${week === 1 ? 'once' : plural(week, 'time')} in the last 7 days · last ${describeWhen(last.from)} for ${describeDuration(last.to - last.from)}`;
+}
+
 export const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));

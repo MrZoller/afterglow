@@ -75,6 +75,10 @@ function useOutstanding(): { text: ReactNode; key: string }[] {
     });
   }
   if (!settings.location) out.push({ key: 'location', text: <Inline text="Add your location in [Settings](#/settings) so schedules can use sunrise and sunset." /> });
+  if (status.notify.error && !status.notify.enabled) out.push({ key: 'notify', text: `Phone notifications are not working: ${status.notify.error}.` });
+  else if (!status.notify.enabled) {
+    out.push({ key: 'notify', text: <Inline text="Phone notifications are not set up, so a light that stays on after a schedule is only reported in the app. See “How do I get told on my phone when something goes wrong?” under **Schedules**." /> });
+  }
   return out;
 }
 

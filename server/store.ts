@@ -4,7 +4,7 @@ import { STARTER_LOOKS } from '../shared/looks';
 import type { ActivityEntry, DeviceState, Group, Look, Schedule, Settings } from '../shared/types';
 import type { StoredAnimation } from './animator';
 import type { DeviceInfo, SceneOption } from './govee/cloud';
-import type { OffWatch } from './verify';
+import type { Watch } from './verify';
 
 export interface StoredDevice {
   info: DeviceInfo;
@@ -31,8 +31,10 @@ interface Data {
   seeded: string[];
   /** Light ids in the order the user arranged them; lights not listed come after. */
   order: string[];
-  /** Scheduled turn-offs still being checked, kept so a restart does not drop them. */
-  watches: OffWatch[];
+  /** Schedule runs still being followed up, kept so a restart does not drop them. */
+  watches: Watch[];
+  /** Times a light could not be reached, newest last, kept for a couple of weeks. */
+  outages: { deviceId: string; from: number; to: number | null }[];
 }
 
 /** Starters that shipped before the `seeded` list existed. */
@@ -52,6 +54,7 @@ const empty = (): Data => ({
   seeded: STARTER_LOOKS.map((look) => look.id),
   order: [],
   watches: [],
+  outages: [],
 });
 
 const MAX_ACTIVITY = 200;

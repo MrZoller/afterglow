@@ -3,7 +3,7 @@ import type { BackupInfo, Device, Group as Zone } from '../../../shared/types';
 import { Field, Group, Sheet, Toggle } from '../components/ui';
 import { ArrowDownIcon, ArrowUpIcon, CopyIcon, PencilIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons';
 import { api, attempt, control, toast, useSnap } from '../store';
-import { formatClock, MODEL_NAMES, plural } from '../util';
+import { describeDropouts, describeWhen, formatClock, MODEL_NAMES, plural } from '../util';
 
 export function SettingsView({ editZone }: { editZone: (id: string | 'new') => void }) {
   const snap = useSnap();
@@ -58,9 +58,11 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
 
         <LocationCard />
 
+        <MissedCard />
+
         <section className="card">
           <h2>Lights</h2>
-          <p className="muted small">Rename a light here without changing it in the Govee app. The order sets how lights are listed and which light gets which colour in a “one per light” look. Tick Reversed if designs come out backwards on a light.</p>
+          <p className="muted small">Rename a light here without changing it in the Govee app. The order sets how lights are listed and which light gets which colour in a “one per light” look. Tick Reversed if designs come out backwards on a light. A light that has dropped off the network lately says so here.</p>
           <div className="rows">
             {devices.map((d, i) => (
               <DeviceRow key={d.id} device={d} move={(by) => void attempt(api('PUT', '/order', { ids: moved(devices.map((x) => x.id), i, by) }))} first={i === 0} last={i === devices.length - 1} />
@@ -366,6 +368,70 @@ function LocationCard() {
   );
 }
 
+/** What happens when a schedule is missed: whether it is carried out late, and whether the owner's phone is told. */
+function MissedCard() {
+  const { settings, status } = useSnap();
+  // Shown at once rather than after the server confirms, so the switch does not flick back.
+  const [catchUp, setCatchUp] = useState(settings.catchUp !== false);
+  useEffect(() => setCatchUp(settings.catchUp !== false), [settings.catchUp]);
+  const [sending, setSending] = useState(false);
+  const { notify } = status;
+
+  const test = async () => {
+    setSending(true);
+    if (await attempt(api('POST', '/notify/test'))) toast('Sent. It should reach your phone in a few seconds.');
+    setSending(false);
+  };
+
+  return (
+    <section className="card">
+      <h2>Missed schedules</h2>
+      <Group label="Catch up">
+        <div className="inline">
+          <Toggle
+            on={catchUp}
+            label="Catch up after a missed schedule"
+            onChange={(on) => {
+              setCatchUp(on);
+              void attempt(api('PUT', '/settings', { catchUp: on }));
+            }}
+          />
+          <span className="muted">{catchUp ? 'A schedule that was missed is carried out as soon as it can be' : 'A schedule that was missed is skipped'}</span>
+        </div>
+      </Group>
+      <p className="muted small">
+        A schedule is missed when this computer is off or asleep at the time, or when a light cannot be reached. With this on, the light is brought into line when it next can be, for up to 24 hours. A light you have used since is left alone.
+      </p>
+
+      <Group label="Phone notifications">
+        {notify.enabled ? (
+          <>
+            <p>
+              <span className="badge ok">On</span> You are told when a light is still on, or has not started, ten minutes after a schedule; when it comes right; and when a schedule ran late.
+            </p>
+            {notify.error ? (
+              <p className="error-text">The last notification did not get through: {notify.error}</p>
+            ) : (
+              notify.lastAt && <p className="muted small">Last sent {describeWhen(notify.lastAt)}.</p>
+            )}
+            <div className="inline">
+              <button type="button" className="btn" disabled={sending} onClick={() => void test()}>
+                {sending ? 'Sending…' : 'Send a test'}
+              </button>
+            </div>
+          </>
+        ) : notify.error ? (
+          <p className="error-text">{notify.error}</p>
+        ) : (
+          <p className="muted">
+            Not set up. To be told on your phone when a light misses a schedule, add a line starting <code>NOTIFY_URL=</code> to the <code>.env</code> file and restart Afterglow. <a href="#/help">Help</a> has the steps.
+          </p>
+        )}
+      </Group>
+    </section>
+  );
+}
+
 /** A copy of the list with one item moved up (-1) or down (+1). */
 function moved<T>(list: T[], index: number, by: -1 | 1): T[] {
   const next = [...list];
@@ -394,6 +460,7 @@ function DeviceRow({ device, move, first, last }: { device: Device; move: (by: -
   const [reversed, setReversed] = useState(device.reversed);
   useEffect(() => setReversed(device.reversed), [device.reversed]);
   const patch = (change: object) => void attempt(api('PATCH', `/devices/${encodeURIComponent(device.id)}`, change));
+  const dropouts = describeDropouts(device);
   const commit = () => {
     const next = name.trim();
     if (next === device.name) return;
@@ -426,6 +493,7 @@ function DeviceRow({ device, move, first, last }: { device: Device; move: (by: -
           </label>
         )}
       </div>
+      {dropouts && <small className={`dropouts${device.dropouts.last?.to === null ? ' now' : ''}`}>{dropouts}</small>}
     </div>
   );
 }

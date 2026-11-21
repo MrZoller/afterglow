@@ -33,7 +33,7 @@ describe('backups', () => {
     const zone = ops.saveGroup({ name: 'Right walkway', deviceIds: [ids[0], ids[1]], joined: true });
     const look = ops.saveLook({ name: 'Mine', colors: [0xff0000, 0x00ff00], pattern: 'gradient', brightness: 40, motion: { loopMinutes: 30 } });
     ops.saveSchedule({ name: 'Evening', days: [0, 1, 2, 3, 4, 5, 6], start: { type: 'sun', event: 'sunset', offsetMin: -15 }, end: { type: 'clock', time: '23:00' }, targets: [`group:${zone.id}`], action: { type: 'look', lookId: look.id } });
-    ops.updateSettings({ location: { lat: 39.74, lon: -104.99, label: 'Home' }, swatches: [0x123456] });
+    ops.updateSettings({ location: { lat: 39.74, lon: -104.99, label: 'Home' }, swatches: [0x123456], catchUp: false });
     hub.update(ids[0], { name: 'Walkway A', reversed: true });
     hub.setOrder([ids[3], ...ids.filter((id) => id !== ids[3])]);
     await (await hub.apply(['all'], { type: 'power', on: true }, 'app')).done;
@@ -53,7 +53,7 @@ describe('backups', () => {
 
     const text = JSON.stringify(doc);
     assert.ok(!text.includes('secret-api-key'));
-    for (const key of ['activity', 'usage', 'lastStart', 'lastEnd', 'lastOff', 'animations', 'watches', 'state', 'scenes', 'devices']) assert.ok(!text.includes(`"${key}"`), `${key} should not be in a backup`);
+    for (const key of ['activity', 'usage', 'lastStart', 'lastEnd', 'lastOff', 'animations', 'watches', 'outages', 'state', 'scenes', 'devices']) assert.ok(!text.includes(`"${key}"`), `${key} should not be in a backup`);
   });
 
   it('makes one snapshot a day and keeps two weeks of them', () => {
@@ -79,7 +79,7 @@ describe('backups', () => {
     ops.deleteSchedule(store.data.schedules[0].id);
     ops.deleteLook(lookId);
     ops.deleteGroup(store.data.groups[0].id);
-    ops.updateSettings({ location: null, swatches: [] });
+    ops.updateSettings({ location: null, swatches: [], catchUp: true });
     hub.update(light, { name: 'Wrong', reversed: false });
     hub.setOrder([]);
     ops.saveLook({ name: 'Made after the backup', colors: [0xffffff], pattern: 'solid', brightness: null });
@@ -98,6 +98,7 @@ describe('backups', () => {
     assert.ok(Date.now() - schedule.lastStart! < 5_000, 'a restored schedule does not fire for a time already past today');
     assert.equal(store.data.settings.location?.label, 'Home');
     assert.deepEqual(store.data.settings.swatches, [0x123456]);
+    assert.equal(store.data.settings.catchUp, false, 'the catch-up switch is part of the setup');
     const restoredLight = hub.list().find((d) => d.id === light)!;
     assert.deepEqual([restoredLight.name, restoredLight.reversed], ['Walkway A', true]);
     assert.equal(hub.list()[0].goveeName, 'Driveway rope', 'the order of lights comes back too');

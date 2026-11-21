@@ -14,14 +14,15 @@ An AI assistant connected over MCP can do everything the page can: control light
 
 ## Secrets and stored data
 
-- The Govee API key, the passphrase and the Anthropic API key live only in `.env`, which is not committed and is never included in backups.
-- `data/` holds your looks, zones, schedules, the location you entered, light names and Govee's identifiers for your lights. It is not committed. Backups contain the same, minus anything in `.env`.
+- The Govee API key, the passphrase, the Anthropic API key and the notification address and token live only in `.env`, which is not committed and is never included in backups.
+- `data/` holds your looks, zones, schedules, the location you entered, light names, Govee's identifiers for your lights, and a two-week record of when each light could not be reached. It is not committed. Backups contain your setup from it, minus anything in `.env`.
 
 ## What leaves your computer
 
 - **Govee's cloud API**: commands and state reads for your lights, authenticated with your Govee key.
 - **Anthropic's API**, only when you use Describe a look: your description, the look being edited, how many lights and segments you have, and the names of built-in scenes. Light names, zones and location are not sent.
 - **Your local network**: UDP messages to the lights on ports 4001 to 4003 when local control is on.
+- **A notification service**, only when `NOTIFY_URL` is set: a short message naming the schedule and the lights concerned, the time, and an address that opens Afterglow on your network, posted to the address you chose. With ntfy.sh, anyone who knows the topic name can read these, so choose one that cannot be guessed, or run your own ntfy server.
 
 Nothing else is sent anywhere. There is no telemetry.
 

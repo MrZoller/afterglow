@@ -45,6 +45,8 @@ export interface ApplyResult {
 
 const KINDS: Record<string, DeviceKind> = { H61A8: 'rope', H61A9: 'rope', H7086: 'garden' };
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long the record of a light dropping off the network is kept. */
+const OUTAGES_KEPT_MS = 14 * DAY_MS;
 
 const blankState = (): DeviceState => ({
   online: null,
@@ -150,7 +152,28 @@ export class Hub extends EventEmitter {
       reversed: !!e.reversed,
       pending: this.queue.pending(e.info.id),
       error: e.error,
+      dropouts: this.dropouts(e.info.id),
     };
+  }
+
+  /** How often a light dropped off the network in the last week, and the most recent time. */
+  private dropouts(id: string, now = Date.now()): Device['dropouts'] {
+    const mine = this.store.data.outages.filter((o) => o.deviceId === id);
+    const last = mine.at(-1);
+    return { week: mine.filter((o) => o.from >= now - 7 * DAY_MS).length, last: last ? { from: last.from, to: last.to } : null };
+  }
+
+  /** Keeps the record of when a light could not be reached, as told by the light or by Govee. */
+  private noteOnline(e: Entry, online: boolean, now = Date.now()): void {
+    const was = e.state.online;
+    e.state.online = online;
+    if (was === online) return;
+    const outages = this.store.data.outages;
+    const open = outages.find((o) => o.deviceId === e.info.id && o.to === null);
+    if (!online && !open) outages.push({ deviceId: e.info.id, from: now, to: null });
+    else if (online && open) open.to = now;
+    this.store.data.outages = outages.filter((o) => (o.to ?? now) >= now - OUTAGES_KEPT_MS).slice(-500);
+    this.store.save();
   }
 
   private persist(): void {
@@ -242,7 +265,7 @@ export class Hub extends EventEmitter {
 
   private merge(e: Entry, cloud: CloudState, source: 'cloud' | 'lan' = 'cloud'): void {
     const st = e.state;
-    if (cloud.online !== null) st.online = cloud.online;
+    if (cloud.online !== null) this.noteOnline(e, cloud.online);
     if (cloud.power !== null) st.power = cloud.power;
     // Switched off somewhere else: stop sending it colours.
     if (cloud.power === false) this.animator.release([e.info.id]);
@@ -378,7 +401,7 @@ export class Hub extends EventEmitter {
     return { scenes: [...merged.values()], lights: entries.length };
   }
 
-  private async plan(e: Entry, action: Action, place: Placement, look: Look | undefined, wake: boolean): Promise<Plan | { skip: string }> {
+  private async plan(e: Entry, action: Action, place: Placement, look: Look | undefined, wake: boolean, phase = 0): Promise<Plan | { skip: string }> {
     const caps = e.info.caps;
     const on: Command[] = wake || e.state.power !== true ? [{ cap: 'power', on: true }] : [];
     const shown = (st: DeviceState) => {
@@ -450,7 +473,7 @@ export class Hub extends EventEmitter {
       case 'palette': {
         if (!look) return { skip: 'look not found' };
         if (!caps.color) return { skip: 'no colour control' };
-        const painted = paint(renderPlaced(look, place));
+        const painted = paint(renderPlaced(look, place, phase));
         const brightness = look.brightness !== null && caps.brightness ? clampBrightness(look.brightness) : null;
         return {
           cmds: [...on, ...(brightness !== null ? [{ cap: 'brightness', value: brightness } as Command] : []), ...painted.cmds],
@@ -494,11 +517,19 @@ export class Hub extends EventEmitter {
     targets: string[],
     action: Action,
     source: Source,
-    /** `quiet` keeps it out of the activity log; `internal` marks a follow-up the app sends itself, such as a resend. */
-    opts: { quiet?: boolean; internal?: boolean } = {},
+    /**
+     * `quiet` keeps it out of the activity log; `internal` marks a follow-up the app sends
+     * itself, such as a resend. `only` limits it to some of the targets while still working
+     * out each light's share from all of them, so a light that missed a design gets the
+     * part it would have had. `since` is when the others were given it, so that a moving
+     * look is joined where it has got to rather than from its beginning.
+     */
+    opts: { quiet?: boolean; internal?: boolean; only?: string[]; since?: number } = {},
   ): Promise<ApplyResult> {
-    const entries = this.resolve(targets);
-    if (entries.length === 0) throw new HttpError(400, 'No lights match those targets');
+    const everyone = this.resolve(targets);
+    if (everyone.length === 0) throw new HttpError(400, 'No lights match those targets');
+    const only = opts.only ? new Set(opts.only) : null;
+    const entries = only ? everyone.filter((e) => only.has(e.info.id)) : everyone;
     const look: Look | undefined =
       action.type === 'look'
         ? this.store.data.looks.find((l) => l.id === action.lookId)
@@ -509,13 +540,16 @@ export class Hub extends EventEmitter {
 
     // Lights joined end to end share one design, so each light's share depends on what else is targeted.
     const places = placeLights(
-      entries.map((e) => ({ id: e.info.id, segments: e.info.caps.segments, reversed: !!e.reversed })),
+      everyone.map((e) => ({ id: e.info.id, segments: e.info.caps.segments, reversed: !!e.reversed })),
       this.store.data.groups,
       (id) => this.entries.has(id),
     );
+    const moves = !!look?.motion && canMove(look);
+    // Where a moving look has got to, for a light joining it late.
+    const phase = moves && opts.since ? (((Date.now() - opts.since) / 60_000 / look!.motion!.loopMinutes) % 1 + 1) % 1 : 0;
     const plans = await Promise.all(
       entries.map((e) =>
-        this.plan(e, action, places.get(e.info.id)!, look, source !== 'app').catch((err): { skip: string } => ({ skip: (err as Error).message })),
+        this.plan(e, action, places.get(e.info.id)!, look, source !== 'app', phase).catch((err): { skip: string } => ({ skip: (err as Error).message })),
       ),
     );
 
@@ -537,7 +571,7 @@ export class Hub extends EventEmitter {
       this.queue.cancel(id, [...slots]);
 
       plan.patch(e.state);
-      e.state.updatedAt = Date.now();
+      const stamp = (e.state.updatedAt = Date.now());
       if (slots.has('appearance')) e.lastCloud = e.lastLan = undefined;
       summary.applied.push(id);
 
@@ -563,7 +597,7 @@ export class Hub extends EventEmitter {
                     this.emit('activity');
                   }
                   // Read the real state back so the screen stops showing what did not happen.
-                  setTimeout(() => void this.refreshAfterFailure(id), 2_000).unref();
+                  setTimeout(() => void this.refreshAfterFailure(id, stamp), 2_000).unref();
                 }
                 this.emit('devices');
               },
@@ -580,7 +614,7 @@ export class Hub extends EventEmitter {
       return [{ id: e.info.id, index, offset, total }];
     });
     const endsMovement = ['color', 'colorTemp', 'segments', 'scene', 'look', 'palette', 'still'].includes(action.type) || (action.type === 'power' && !action.on);
-    if (look?.motion && canMove(look) && applied.length) this.animator.begin({ ...look, motion: look.motion }, applied);
+    if (look?.motion && moves && applied.length) this.animator.begin({ ...look, motion: look.motion }, applied, opts.since);
     else if (endsMovement) this.animator.release(applied.map((l) => l.id));
 
     // Tells anything watching these lights (such as a turn-off check) that they have newer orders.
@@ -588,7 +622,7 @@ export class Hub extends EventEmitter {
 
     if (summary.applied.length && !opts.quiet) {
       const skipped = summary.skipped.length ? `${summary.skipped.length} skipped` : undefined;
-      this.store.log({ source, ok: true, text: `${this.describeTargets(targets)}: ${this.describeAction(action)}`, detail: skipped });
+      this.store.log({ source, ok: true, text: `${this.describeTargets(only ? summary.applied : targets)}: ${this.describeAction(action)}`, detail: skipped });
       this.emit('activity');
     }
     this.persist();
@@ -612,6 +646,14 @@ export class Hub extends EventEmitter {
     const e = this.entries.get(id);
     if (!e) return;
     e.error = message;
+    this.emit('devices');
+  }
+
+  /** Takes back a problem set with flag(), unless something else has gone wrong on the light since. */
+  unflag(id: string, message: string): void {
+    const e = this.entries.get(id);
+    if (!e || e.error !== message) return;
+    e.error = null;
     this.emit('devices');
   }
 
@@ -699,9 +741,10 @@ export class Hub extends EventEmitter {
     return !failure;
   }
 
-  private async refreshAfterFailure(id: string): Promise<void> {
+  private async refreshAfterFailure(id: string, stamp: number): Promise<void> {
     const e = this.entries.get(id);
-    if (!e) return;
+    // Something newer has been applied since the failure: what is on screen now is not what failed.
+    if (!e || e.state.updatedAt !== stamp || this.queue.pending(id) > 0) return;
     e.state.updatedAt = 0;
     e.state.appearance = { mode: 'unknown' };
     await this.refresh([id]);

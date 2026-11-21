@@ -34,7 +34,7 @@ describe('checking that a scheduled turn-off happened', () => {
     hub = new Hub(new GoveeCloud({ apiKey: 'test', baseUrl: fake.url }), store);
     ops = new Ops(store, hub, () => undefined);
     scheduler = new Scheduler(store, hub, () => undefined);
-    scheduler.offs.settleMs = 0;
+    scheduler.watcher.settleMs = 0;
     await hub.discover();
     ids = hub.list().slice(0, 3).map((d) => d.id);
     schedule = ops.saveSchedule({ name: 'Night', days: [0, 1, 2, 3, 4, 5, 6], start: { type: 'clock', time: '18:00' }, end: { type: 'clock', time: '07:00' }, targets: ids, action: { type: 'power', on: true } });
@@ -54,7 +54,7 @@ describe('checking that a scheduled turn-off happened', () => {
     const result = await hub.apply(ids, { type: 'power', on: false }, 'schedule');
     await result.done;
     t0 = Date.now();
-    scheduler.offs.watch(schedule, result.summary.applied, t0);
+    scheduler.watcher.watch(schedule, 'end', result.summary.applied, t0);
     fake.controls.length = 0;
   };
   const offsSent = (id: string) => fake.controls.filter((c) => c.device === id && c.capability.instance === 'powerSwitch' && c.capability.value === 0).length;
@@ -64,10 +64,10 @@ describe('checking that a scheduled turn-off happened', () => {
   it('confirms and stops when every light is off at the first check', async () => {
     await turnOff();
     assert.equal(scheduler.view(schedule).checkingOff, true);
-    await scheduler.offs.tick(t0 + 59_000);
+    await scheduler.watcher.tick(t0 + 59_000);
     assert.equal(store.data.watches.length, 1, 'nothing happens before the first check is due');
 
-    await scheduler.offs.tick(t0 + 1 * MIN);
+    await scheduler.watcher.tick(t0 + 1 * MIN);
     assert.equal(store.data.watches.length, 0);
     assert.deepEqual(schedule.lastOff, { at: t0 + 1 * MIN, ok: true, text: 'Confirmed off' });
     assert.equal(scheduler.view(schedule).checkingOff, false);
@@ -80,17 +80,17 @@ describe('checking that a scheduled turn-off happened', () => {
     await turnOff();
     assert.equal(isOn(ids[1]), true);
 
-    await scheduler.offs.tick(t0 + 1 * MIN);
+    await scheduler.watcher.tick(t0 + 1 * MIN);
     assert.deepEqual(store.data.watches[0].lights, [ids[1]], 'only the light that is still on stays under watch');
     assert.equal(offsSent(ids[1]), 1);
     assert.equal(offsSent(ids[0]), 0);
 
     fake.ignoring.clear(); // from now on it listens
-    await scheduler.offs.tick(t0 + 3 * MIN);
+    await scheduler.watcher.tick(t0 + 3 * MIN);
     assert.equal(isOn(ids[1]), false);
     assert.equal(store.data.watches.length, 1, 'the resend is itself checked before the watch ends');
 
-    await scheduler.offs.tick(t0 + 10 * MIN);
+    await scheduler.watcher.tick(t0 + 10 * MIN);
     assert.equal(store.data.watches.length, 0);
     assert.equal(schedule.lastOff?.ok, true);
     assert.equal(schedule.lastOff?.text, `Confirmed off (${hub.nameOf(ids[1])} needed another try)`);
@@ -100,10 +100,10 @@ describe('checking that a scheduled turn-off happened', () => {
   it('reports a light that never turns off, after trying at every check', async () => {
     fake.ignoring.add(ids[2]);
     await turnOff();
-    for (const minutes of CHECK_MINUTES) await scheduler.offs.tick(t0 + minutes * MIN);
+    for (const minutes of CHECK_MINUTES) await scheduler.watcher.tick(t0 + minutes * MIN);
 
     assert.equal(offsSent(ids[2]), CHECK_MINUTES.length);
-    assert.equal(store.data.watches.length, 0);
+    assert.deepEqual(store.data.watches.map((w) => w.lights), [[ids[2]]], 'the light is kept, to be tried again later');
     assert.equal(schedule.lastOff?.ok, false);
     assert.equal(schedule.lastOff?.text, `${hub.nameOf(ids[2])} is still on`);
     assert.equal(hub.list().find((d) => d.id === ids[2])!.error, 'Still on after “Night” ended');
@@ -116,9 +116,9 @@ describe('checking that a scheduled turn-off happened', () => {
   it('counts a light that obeys the very last resend as confirmed', async () => {
     fake.ignoring.add(ids[2]);
     await turnOff();
-    for (const minutes of CHECK_MINUTES.slice(0, -1)) await scheduler.offs.tick(t0 + minutes * MIN);
+    for (const minutes of CHECK_MINUTES.slice(0, -1)) await scheduler.watcher.tick(t0 + minutes * MIN);
     fake.ignoring.clear();
-    await scheduler.offs.tick(t0 + CHECK_MINUTES.at(-1)! * MIN);
+    await scheduler.watcher.tick(t0 + CHECK_MINUTES.at(-1)! * MIN);
     assert.equal(isOn(ids[2]), false);
     assert.equal(schedule.lastOff?.ok, true);
     assert.match(schedule.lastOff?.text ?? '', /needed another try/);
@@ -127,7 +127,7 @@ describe('checking that a scheduled turn-off happened', () => {
   it('says so when a light cannot be reached at all', async () => {
     fake.offline.add(ids[0]);
     await turnOff();
-    for (const minutes of CHECK_MINUTES) await scheduler.offs.tick(t0 + minutes * MIN);
+    for (const minutes of CHECK_MINUTES) await scheduler.watcher.tick(t0 + minutes * MIN);
     assert.equal(schedule.lastOff?.ok, false);
     assert.equal(schedule.lastOff?.text, `${hub.nameOf(ids[0])} could not be reached`);
     assert.match(hub.list().find((d) => d.id === ids[0])!.error ?? '', /Could not be reached to confirm it is off/);
@@ -136,13 +136,13 @@ describe('checking that a scheduled turn-off happened', () => {
   it('turns a light off once it comes back within the hour', async () => {
     fake.offline.add(ids[0]);
     await turnOff();
-    await scheduler.offs.tick(t0 + 1 * MIN);
-    await scheduler.offs.tick(t0 + 3 * MIN);
+    await scheduler.watcher.tick(t0 + 1 * MIN);
+    await scheduler.watcher.tick(t0 + 3 * MIN);
     assert.equal(isOn(ids[0]), true);
     fake.offline.clear(); // back on the network
-    await scheduler.offs.tick(t0 + 10 * MIN);
+    await scheduler.watcher.tick(t0 + 10 * MIN);
     assert.equal(isOn(ids[0]), false);
-    await scheduler.offs.tick(t0 + 30 * MIN);
+    await scheduler.watcher.tick(t0 + 30 * MIN);
     assert.equal(schedule.lastOff?.ok, true);
   });
 
@@ -156,10 +156,31 @@ describe('checking that a scheduled turn-off happened', () => {
     fake.controls.length = 0;
     assert.deepEqual(store.data.watches[0].lights.sort(), [ids[0], ids[2]].sort());
 
-    await scheduler.offs.tick(t0 + 1 * MIN);
+    await scheduler.watcher.tick(t0 + 1 * MIN);
     assert.equal(offsSent(ids[1]), 0, 'the light in use is not switched off again');
     assert.equal(isOn(ids[1]), true);
     assert.equal(offsSent(ids[0]), 1, 'the other light that missed it still gets a retry');
+  });
+
+  it('does not take back a light that someone uses while a resend is going out', async () => {
+    fake.ignoring.add(ids[0]);
+    fake.ignoring.add(ids[1]);
+    await turnOff();
+    // The moment the watcher resends "off", someone gives the second light a colour through the app.
+    const apply = hub.apply.bind(hub);
+    hub.apply = async (targets, action, source, opts) => {
+      if (opts?.internal) await (await apply([ids[1]], { type: 'color', rgb: 0x00ff00 }, 'app')).done;
+      return apply(targets, action, source, opts);
+    };
+    try {
+      await scheduler.watcher.tick(t0 + 1 * MIN);
+    } finally {
+      hub.apply = apply;
+    }
+    assert.deepEqual(store.data.watches.map((w) => w.lights), [[ids[0]]], 'only the light nobody touched is still watched');
+    fake.controls.length = 0;
+    await scheduler.watcher.tick(t0 + 3 * MIN);
+    assert.equal(offsSent(ids[1]), 0);
   });
 
   it('starts a check when a schedule ends, and picks it up again after a restart', async () => {
@@ -177,9 +198,9 @@ describe('checking that a scheduled turn-off happened', () => {
     const store2 = new Store(dir);
     const hub2 = new Hub(new GoveeCloud({ apiKey: 'test', baseUrl: fake.url }), store2);
     const scheduler2 = new Scheduler(store2, hub2, () => undefined);
-    scheduler2.offs.settleMs = 0;
+    scheduler2.watcher.settleMs = 0;
     assert.equal(scheduler2.view(store2.data.schedules[0]).checkingOff, true);
-    await scheduler2.offs.tick(end.getTime() + 1 * MIN);
+    await scheduler2.watcher.tick(end.getTime() + 1 * MIN);
     assert.equal(store2.data.schedules[0].lastOff?.ok, true);
   });
 });
@@ -196,22 +217,22 @@ describe('checking lights that answer on the local network', () => {
       const hub = new Hub(new GoveeCloud({ apiKey: 'test', baseUrl: cloudSide.url, onRequest: () => store.countRequest() }), store, lan);
       hub.confirmDelayMs = 5;
       const scheduler = new Scheduler(store, hub, () => undefined);
-      scheduler.offs.settleMs = 0;
+      scheduler.watcher.settleMs = 0;
       await hub.discover();
       const id = hub.list()[0].id;
       const schedule = { id: 's', name: 'Night' };
 
       await (await hub.apply([id], { type: 'power', on: false }, 'schedule')).done;
       const t0 = Date.now();
-      scheduler.offs.watch(schedule, [id], t0);
+      scheduler.watcher.watch(schedule, 'end', [id], t0);
       cloudSide.lights[0].power = 1; // as if the light came back on by itself
       lanSide.received.length = 0;
       const requests = store.requestsToday();
 
-      await scheduler.offs.tick(t0 + 1 * MIN);
+      await scheduler.watcher.tick(t0 + 1 * MIN);
       assert.deepEqual(lanSide.received.map((r) => [r.cmd, r.data.value]), [['turn', 0]]);
       assert.equal(cloudSide.lights[0].power, 0);
-      await scheduler.offs.tick(t0 + 3 * MIN);
+      await scheduler.watcher.tick(t0 + 3 * MIN);
       assert.equal(store.data.watches.length, 0);
       assert.equal(store.requestsToday(), requests, 'checking and retrying a local light uses no cloud requests');
     } finally {
