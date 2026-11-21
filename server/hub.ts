@@ -490,7 +490,13 @@ export class Hub extends EventEmitter {
    * Applies an action to the targets. State is updated straight away; the commands go
    * out through the queue, and failures surface on the device and in the activity log.
    */
-  async apply(targets: string[], action: Action, source: Source): Promise<ApplyResult> {
+  async apply(
+    targets: string[],
+    action: Action,
+    source: Source,
+    /** `quiet` keeps it out of the activity log; `internal` marks a follow-up the app sends itself, such as a resend. */
+    opts: { quiet?: boolean; internal?: boolean } = {},
+  ): Promise<ApplyResult> {
     const entries = this.resolve(targets);
     if (entries.length === 0) throw new HttpError(400, 'No lights match those targets');
     const look: Look | undefined =
@@ -552,8 +558,10 @@ export class Hub extends EventEmitter {
                 if (!reported) {
                   reported = true;
                   failed.push({ deviceId: id, name, error: err.message });
-                  this.store.log({ source, ok: false, text: `${name}: could not apply ${this.describeAction(action)}`, detail: err.message });
-                  this.emit('activity');
+                  if (!opts.quiet) {
+                    this.store.log({ source, ok: false, text: `${name}: could not apply ${this.describeAction(action)}`, detail: err.message });
+                    this.emit('activity');
+                  }
                   // Read the real state back so the screen stops showing what did not happen.
                   setTimeout(() => void this.refreshAfterFailure(id), 2_000).unref();
                 }
@@ -575,7 +583,10 @@ export class Hub extends EventEmitter {
     if (look?.motion && canMove(look) && applied.length) this.animator.begin({ ...look, motion: look.motion }, applied);
     else if (endsMovement) this.animator.release(applied.map((l) => l.id));
 
-    if (summary.applied.length) {
+    // Tells anything watching these lights (such as a turn-off check) that they have newer orders.
+    if (!opts.internal && summary.applied.length) this.emit('applied', summary.applied);
+
+    if (summary.applied.length && !opts.quiet) {
       const skipped = summary.skipped.length ? `${summary.skipped.length} skipped` : undefined;
       this.store.log({ source, ok: true, text: `${this.describeTargets(targets)}: ${this.describeAction(action)}`, detail: skipped });
       this.emit('activity');
@@ -589,6 +600,43 @@ export class Hub extends EventEmitter {
       return { failed };
     });
     return { summary, done };
+  }
+
+  nameOf(id: string): string {
+    const e = this.entries.get(id);
+    return e ? (e.alias ?? e.info.goveeName) : 'A removed light';
+  }
+
+  /** Marks a light as having a problem, shown on its card until its next successful command. */
+  flag(id: string, message: string): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    e.error = message;
+    this.emit('devices');
+  }
+
+  /**
+   * Whether a light is on right now, asked of the light itself when it answers locally
+   * and of Govee's cloud otherwise. `reachable` is false when neither could vouch for it.
+   */
+  async powerOf(id: string): Promise<{ power: boolean | null; reachable: boolean }> {
+    const e = this.entries.get(id);
+    if (!e) return { power: null, reachable: false };
+    const local = this.lan?.has(id) ? await this.lan.status(id) : null;
+    if (local) {
+      this.merge(e, local, 'lan');
+      this.emit('devices');
+      return { power: local.power, reachable: true };
+    }
+    try {
+      const seen = await this.cloud.getState(e.info);
+      this.merge(e, seen, 'cloud');
+      this.emit('devices');
+      // Govee keeps the last known values for a light that has dropped off, so "offline" proves nothing.
+      return { power: seen.power, reachable: seen.online !== false };
+    } catch {
+      return { power: null, reachable: false };
+    }
   }
 
   private goesLocal(e: Entry, cmd: Command): boolean {

@@ -2,6 +2,7 @@ import { getTimes } from 'suncalc';
 import type { Schedule, ScheduleView, Settings, TimeSpec } from '../shared/types';
 import type { Hub } from './hub';
 import type { Store } from './store';
+import { OffWatcher } from './verify';
 
 type Location = Settings['location'];
 
@@ -75,16 +76,22 @@ const usesSun = (s: Schedule) => s.start.type === 'sun' || s.end?.type === 'sun'
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
 
+  /** Checks that scheduled turn-offs really happened. */
+  readonly offs: OffWatcher;
+
   constructor(
     private store: Store,
     private hub: Hub,
     private onChange: () => void,
-  ) {}
+  ) {
+    this.offs = new OffWatcher(store, hub, onChange);
+  }
 
   start(): void {
     this.timer = setInterval(() => void this.tick(), 20_000);
     this.timer.unref();
     void this.tick();
+    this.offs.start();
   }
 
   view(s: Schedule, now = new Date()): ScheduleView {
@@ -93,7 +100,7 @@ export class Scheduler {
     if (usesSun(s) && !loc) problem = 'Set your location in Settings to use sunrise and sunset times';
     else if (this.hub.deviceIds(s.targets).length === 0) problem = 'None of the selected lights exist any more';
     else if (s.action.type === 'look' && !this.store.data.looks.some((l) => l.id === (s.action as { lookId: string }).lookId)) problem = 'The look this schedule used was deleted';
-    return { ...s, next: s.enabled && !problem ? nextEvent(s, now, loc) : null, problem };
+    return { ...s, next: s.enabled && !problem ? nextEvent(s, now, loc) : null, problem, checkingOff: this.offs.checking(s.id) };
   }
 
   views(): ScheduleView[] {
@@ -134,7 +141,9 @@ export class Scheduler {
       try {
         const action = kind === 'end' ? ({ type: 'power', on: false } as const) : s.action;
         // Not waiting for delivery: each light's queue keeps the commands in order.
-        await this.hub.apply(s.targets, action, 'schedule');
+        const { summary } = await this.hub.apply(s.targets, action, 'schedule');
+        // A turn-off is then checked, and repeated for any light that did not obey.
+        if (action.type === 'power' && !action.on) this.offs.watch(s, summary.applied, now.getTime());
       } catch (err) {
         this.store.log({ source: 'schedule', ok: false, text: `Schedule "${s.name}" could not run`, detail: (err as Error).message });
         this.hub.emit('activity');

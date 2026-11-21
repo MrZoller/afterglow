@@ -1464,6 +1464,29 @@ select.input {
   color: var(--accent);
 }
 
+.schedule .verify {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.schedule .verify.ok svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ok);
+}
+
+.schedule .error-text {
+  align-items: flex-start;
+}
+
+.schedule .error-text svg {
+  flex: none;
+  margin-top: 2px;
+}
+
 .schedule.paused .schedule-body {
   opacity: 0.55;
 }

@@ -88,6 +88,15 @@ export function describeNext(next: ScheduleView['next']): string | null {
   return `${next.kind === 'end' ? 'Turns off' : 'Starts'} ${day} at ${formatClock(at)}`;
 }
 
+/** "today at 7:01 AM", "yesterday at 7:01 AM", or a date for anything older. */
+export function describeWhen(at: number): string {
+  const when = new Date(at);
+  const today = new Date();
+  const dayDiff = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - new Date(when.getFullYear(), when.getMonth(), when.getDate()).getTime()) / 86400000);
+  const day = dayDiff === 0 ? 'today' : dayDiff === 1 ? 'yesterday' : when.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${day} at ${formatClock(when)}`;
+}
+
 export function describeAction(action: Action, snap: Snapshot): string {
   switch (action.type) {
     case 'power':

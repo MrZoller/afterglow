@@ -152,10 +152,14 @@ export interface Schedule {
   action: Action;
   lastStart: number | null;
   lastEnd: number | null;
+  /** Outcome of checking that the lights really went off the last time this schedule turned them off. */
+  lastOff?: { at: number; ok: boolean; text: string } | null;
 }
 
 export interface ScheduleView extends Schedule {
   next: { at: number; kind: 'start' | 'end' } | null;
+  /** True while the lights are still being checked after a turn-off. */
+  checkingOff: boolean;
   /** Why the schedule cannot run, e.g. a sun time without a location. */
   problem: string | null;
 }

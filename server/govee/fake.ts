@@ -23,6 +23,10 @@ export interface FakeGovee {
   /** Every control request received, oldest first. */
   controls: { device: string; capability: { type: string; instance: string; value: unknown } }[];
   lights: FakeLight[];
+  /** Lights that accept commands but do not act on them, like one that missed the message. */
+  ignoring: Set<string>;
+  /** Lights that have dropped off the network: commands fail and their state is reported as offline. */
+  offline: Set<string>;
   close(): Promise<void>;
 }
 
@@ -86,6 +90,8 @@ export async function startFakeGovee(
 ): Promise<FakeGovee> {
   const all = lights();
   const controls: FakeGovee['controls'] = [];
+  const ignoring = new Set<string>();
+  const offline = new Set<string>();
   const hits = new Map<string, number[]>();
   const app = express();
   app.use(express.json());
@@ -126,7 +132,7 @@ export async function startFakeGovee(
         sku: light.sku,
         device: light.device,
         capabilities: [
-          state('online', 'online', true),
+          state('online', 'online', !offline.has(light.device)),
           state('on_off', 'powerSwitch', light.power),
           state('range', 'brightness', light.brightness),
           state('color_setting', 'colorRgb', light.colorRgb),
@@ -181,6 +187,14 @@ export async function startFakeGovee(
     }
     await delay();
     controls.push({ device: light.device, capability });
+    if (offline.has(light.device)) {
+      res.status(400).json({ code: 400, msg: 'device offline' });
+      return;
+    }
+    if (ignoring.has(light.device)) {
+      res.json({ requestId: req.body.requestId, msg: 'success', code: 200, capability: { ...capability, state: { status: 'success' } } });
+      return;
+    }
     const { instance, value } = capability;
     if (instance === 'powerSwitch') light.power = value ? 1 : 0;
     else if (instance === 'brightness') light.brightness = value;
@@ -199,6 +213,8 @@ export async function startFakeGovee(
     url: `http://127.0.0.1:${port}`,
     controls,
     lights: all,
+    ignoring,
+    offline,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

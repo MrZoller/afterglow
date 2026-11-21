@@ -4,9 +4,9 @@ import type { Action, SceneChoice, Schedule, ScheduleView, Status, TimeSpec } fr
 import { ColorPad } from '../components/ColorPad';
 import { TargetPicker } from '../components/TargetPicker';
 import { Empty, Field, Group, Segmented, Sheet, Slider, Toggle } from '../components/ui';
-import { AlertIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from '../icons';
+import { AlertIcon, CheckIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from '../icons';
 import { api, attempt, toast, useSnap } from '../store';
-import { describeAction, describeDays, describeNext, describeSeason, describeTargets, describeTime, formatClock } from '../util';
+import { describeAction, describeDays, describeNext, describeSeason, describeTargets, describeTime, describeWhen, formatClock } from '../util';
 
 type Input = Omit<Schedule, 'id' | 'lastStart' | 'lastEnd'>;
 
@@ -57,6 +57,16 @@ export function SchedulesView() {
                   ) : (
                     <p className="next">{s.enabled ? (describeNext(s.next) ?? 'Not due to run') : 'Paused'}</p>
                   )}
+                  {s.checkingOff ? (
+                    <p className="verify">Checking that the lights turned off…</p>
+                  ) : s.lastOff ? (
+                    <p className={s.lastOff.ok ? 'verify ok' : 'error-text'}>
+                      {s.lastOff.ok ? <CheckIcon size={14} /> : <AlertIcon size={14} />}
+                      <span>
+                        Turn-off {describeWhen(s.lastOff.at)}: {s.lastOff.text[0].toLowerCase() + s.lastOff.text.slice(1)}
+                      </span>
+                    </p>
+                  ) : null}
                 </div>
                 <div className="schedule-actions">
                   <button

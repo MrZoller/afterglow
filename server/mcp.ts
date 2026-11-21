@@ -260,6 +260,8 @@ function build(services: Services): McpServer {
           targets: hub.describeTargets(s.targets),
           does: hub.describeAction(s.action),
           next: s.next ? `${s.next.kind === 'end' ? 'turns off' : 'starts'} ${new Date(s.next.at).toLocaleString()}` : null,
+          // Whether the lights were confirmed off the last time this schedule switched them off.
+          last_turn_off: s.checkingOff ? 'still being checked' : s.lastOff ? `${s.lastOff.ok ? 'confirmed' : 'problem'}: ${s.lastOff.text} (${new Date(s.lastOff.at).toLocaleString()})` : undefined,
           problem: s.problem ?? undefined,
         })),
       ),
