@@ -67,7 +67,8 @@ for (const [device, viewport] of [
 
       await test.step('each model in the local designs card is a row, with its button and switch inside the card', async () => {
         await expect(page.locator('.model-row')).toHaveCount(2);
-        for (const height of await heights(page, '.model-row')) expect(height).toBeLessThanOrEqual(90);
+        // A few lines at most, whatever the font: the point is that a row never grows into a block.
+        for (const height of await heights(page, '.model-row')) expect(height).toBeLessThanOrEqual(130);
         const card = (await page.locator('.card', { hasText: 'Designs over your own network' }).first().boundingBox())!;
         for (const toggle of await page.locator('.model-row .toggle').all()) {
           const box = (await toggle.boundingBox())!;

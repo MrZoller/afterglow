@@ -27,9 +27,9 @@ test('local designs are tried on a model, switched on, and then use no cloud req
     await expect(card.locator('.badge')).toHaveText('Experimental');
     await expect(card.locator('.model-row')).toHaveCount(2);
     await expect(ropes).toContainText('Neon rope · H61A9');
-    await expect(ropes).toContainText('4 of 4 answer on your network');
+    await expect(ropes).toContainText('4 of 4 answer locally');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await expect(gardens).toContainText('None answer on your network yet');
+    await expect(gardens).toContainText('None answer locally yet');
     await expect(gardens.getByRole('button', { name: 'Test H7086' })).toBeDisabled();
     expect((await app.snapshot()).devices.some((d) => d.localDesigns)).toBe(false);
   });

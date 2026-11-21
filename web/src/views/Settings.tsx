@@ -317,7 +317,7 @@ function LocalDesignsCard() {
               <strong>
                 {MODEL_NAMES[m.kind]} · {m.sku}
               </strong>
-              <small>{m.near === 0 ? 'None answer on your network yet' : `${m.near} of ${m.lights} answer on your network`}</small>
+              <small>{m.near === 0 ? 'None answer locally yet' : `${m.near} of ${m.lights} answer locally`}</small>
             </div>
             <button type="button" className="btn sm" aria-label={`Test ${m.sku}`} disabled={m.near === 0 || testing !== null} onClick={() => void test(m.sku)}>
               {testing === m.sku ? 'Sending…' : 'Test'}
