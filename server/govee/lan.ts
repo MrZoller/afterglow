@@ -2,15 +2,46 @@ import dgram from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import { parts, rgbOf } from '../../shared/color';
+import type { RGB } from '../../shared/types';
 import type { CloudState, Command } from './cloud';
 
 /**
  * Govee's local network API: UDP messages straight to the lights, with no cloud, no
- * request quota and no noticeable delay. It only covers power, brightness, a single
- * colour and white temperature; segments and scenes still need the cloud API.
+ * request quota and no noticeable delay. As documented it only covers power, brightness,
+ * a single colour and white temperature; scenes still need the cloud API.
+ *
+ * Segment colours can also be sent this way with `ptReal`, a message Govee does not
+ * document: it carries frames of the protocol the Govee app speaks over Bluetooth. The
+ * layout used here is the one two community projects send (govee-local-api, used by
+ * Home Assistant, and govee-lan-bridge). Whether a given model acts on it has to be
+ * found out on the light, which is why the app only uses it where the owner has tried it.
  *
  * Each light must have "LAN Control" switched on in the Govee Home app.
  */
+
+/** Frames a light takes in one message. Lights have been seen to accept 18 and to drop a message of 24 whole. */
+export const MAX_FRAMES = 12;
+/** The most segments a design is painted on locally: the longest light the message has been reported to address. */
+export const MAX_PAINT_SEGMENTS = 24;
+
+/** One 20-byte frame: the data, zero padding, then a checksum that is the XOR of the 19 bytes before it. */
+export function frame(data: number[]): Buffer {
+  const bytes = Buffer.alloc(20);
+  data.slice(0, 19).forEach((b, i) => (bytes[i] = b & 0xff));
+  bytes[19] = bytes.subarray(0, 19).reduce((x, b) => x ^ b, 0);
+  return bytes;
+}
+
+/**
+ * The frame that gives some of a light's segments one colour. Which segments is a
+ * little-endian bit mask starting at byte 12: segment i, counting from 0, is bit i.
+ */
+export function segmentFrame(rgb: RGB, segments: number[], count: number): Buffer {
+  const mask = Array<number>(Math.ceil(count / 8)).fill(0);
+  for (const i of segments) if (Number.isInteger(i) && i >= 0 && i < count) mask[i >> 3] |= 1 << (i & 7);
+  const [r, g, b] = parts(rgb);
+  return frame([0x33, 0x05, 0x15, 0x01, r, g, b, 0, 0, 0, 0, 0, ...mask]);
+}
 
 export type LanCommand = Extract<Command, { cap: 'power' | 'brightness' | 'color' | 'colorTemp' }>;
 
@@ -28,6 +59,11 @@ export interface LanOptions {
   /** A light not heard from for this long is treated as unreachable until it answers a scan again. */
   staleAfterMs?: number;
   statusTimeoutMs?: number;
+  /**
+   * Shortest time between two messages to the same light. A light is busy for a moment
+   * after each one, and a message arriving meanwhile has been seen to be dropped silently.
+   */
+  minGapMs?: number;
 }
 
 interface LanLight {
@@ -46,6 +82,7 @@ const DEFAULTS = {
   scanEveryMs: 60_000,
   staleAfterMs: 150_000,
   statusTimeoutMs: 1_200,
+  minGapMs: 150,
 };
 
 const message = (cmd: string, data: object) => Buffer.from(JSON.stringify({ msg: { cmd, data } }));
@@ -59,6 +96,9 @@ export class GoveeLan extends EventEmitter {
   private lights = new Map<string, LanLight>();
   private waiting = new Map<string, ((state: CloudState) => void)[]>();
   private timer: NodeJS.Timeout | null = null;
+  /** Per light: the message in front of the next one, and when the last one went out. */
+  private queue = new Map<string, Promise<void>>();
+  private sentAt = new Map<string, number>();
 
   constructor(options: LanOptions = {}) {
     super();
@@ -118,6 +158,23 @@ export class GoveeLan extends EventEmitter {
       if (!this.socket) return reject(new Error('Local control is not running'));
       this.socket.send(data, port, address, (err) => (err ? reject(err) : resolve()));
     });
+  }
+
+  /** Sends to one light, in turn and no sooner after the last message to it than it can take. */
+  private sendTo(light: LanLight, data: Buffer): Promise<void> {
+    const turn = (this.queue.get(light.id) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        const wait = (this.sentAt.get(light.id) ?? 0) + this.opts.minGapMs - Date.now();
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        try {
+          await this.send(data, light.port, light.ip);
+        } finally {
+          this.sentAt.set(light.id, Date.now());
+        }
+      });
+    this.queue.set(light.id, turn);
+    return turn;
   }
 
   /** Asks every light on the network to announce itself. */
@@ -201,33 +258,48 @@ export class GoveeLan extends EventEmitter {
         data = message('colorwc', { color: { r: 0, g: 0, b: 0 }, colorTemInKelvin: cmd.kelvin });
         break;
     }
-    await this.send(data, light.port, light.ip);
+    await this.sendTo(light, data);
+  }
+
+  /**
+   * Paints a design on a light: each group of segments gets its colour. Sent with the
+   * undocumented `ptReal` message, a few frames at a time. Like every local command it
+   * comes with no receipt, and the light cannot report its segments back.
+   */
+  async paint(id: string, groups: { rgb: RGB; segments: number[] }[], count: number): Promise<void> {
+    const light = this.lights.get(id);
+    if (!light) throw new Error('Light is not reachable locally');
+    if (count < 1 || count > MAX_PAINT_SEGMENTS) throw new Error('Light has more segments than a local design can address');
+    const frames = groups.map((g) => segmentFrame(g.rgb, g.segments, count).toString('base64'));
+    for (let i = 0; i < frames.length; i += MAX_FRAMES) {
+      await this.sendTo(light, message('ptReal', { command: frames.slice(i, i + MAX_FRAMES) }));
+    }
   }
 
   /** Reads power, brightness and colour from the light. Null when it does not answer in time. */
   async status(id: string): Promise<CloudState | null> {
     const light = this.lights.get(id);
     if (!light || !this.socket) return null;
-    const answer = new Promise<CloudState | null>((resolve) => {
-      const waiters = this.waiting.get(id) ?? [];
-      const timer = setTimeout(() => {
-        const list = this.waiting.get(id);
-        if (list) this.waiting.set(id, list.filter((w) => w !== done));
-        resolve(null);
-      }, this.opts.statusTimeoutMs);
-      const done = (state: CloudState) => {
-        clearTimeout(timer);
-        resolve(state);
-      };
-      waiters.push(done);
-      this.waiting.set(id, waiters);
-    });
+    let settle!: (state: CloudState | null) => void;
+    const answer = new Promise<CloudState | null>((resolve) => (settle = resolve));
+    const waiter = (state: CloudState) => settle(state);
+    this.waiting.set(id, [...(this.waiting.get(id) ?? []), waiter]);
+    const forget = () => {
+      const list = this.waiting.get(id);
+      if (list) this.waiting.set(id, list.filter((w) => w !== waiter));
+    };
     try {
-      await this.send(message('devStatus', {}), light.port, light.ip);
+      await this.sendTo(light, message('devStatus', {}));
     } catch {
+      forget();
       return null;
     }
-    return answer;
+    // The clock starts once the question has actually gone out, which may be a moment after it was asked.
+    const timer = setTimeout(() => {
+      forget();
+      settle(null);
+    }, this.opts.statusTimeoutMs);
+    return answer.finally(() => clearTimeout(timer));
   }
 
   /** Stops using a light locally until it answers a scan again. */

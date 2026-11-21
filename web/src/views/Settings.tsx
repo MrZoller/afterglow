@@ -54,6 +54,8 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
           </button>
         </section>
 
+        <LocalDesignsCard />
+
         <AddressCard />
 
         <LocationCard />
@@ -253,6 +255,7 @@ function BackupsCard() {
 function LocalControl() {
   const { status, devices } = useSnap();
   const near = devices.filter((d) => d.local).length;
+  const designs = devices.filter((d) => d.localDesigns).length;
   if (!status.lan.enabled) return <p className="muted small">Local control is switched off, so everything goes through Govee’s cloud.</p>;
   if (status.lan.error) return <p className="error-text">Local control is unavailable: {status.lan.error}. Everything goes through Govee’s cloud.</p>;
   if (devices.length === 0) return null;
@@ -260,9 +263,74 @@ function LocalControl() {
     <p>
       <span className={`badge${near ? ' ok' : ''}`}>Local</span>{' '}
       {near === devices.length ? `All ${near} lights answer` : near === 0 ? 'No lights answer' : `${near} of ${devices.length} lights answer`} on your own network.
-      {near > 0 && ' On/off, brightness, single colours and white go straight to them, instantly and without using Govee requests. Multi-colour designs and Govee scenes still go through the cloud.'}
+      {near > 0 && ' On/off, brightness, single colours and white go straight to them, instantly and without using Govee requests.'}
+      {near > 0 && (designs > 0 ? ` Multi-colour designs go straight to ${designs === near ? 'them' : `${designs} of them`} too; Govee scenes still go through the cloud.` : ' Multi-colour designs and Govee scenes still go through the cloud.')}
       {near < devices.length && ` To add ${near === 0 ? 'them' : 'the rest'}, open each light’s settings in the Govee Home app and turn on LAN Control; they appear here within a minute.`}
     </p>
+  );
+}
+
+/**
+ * Multi-colour designs sent straight to the lights instead of through Govee's cloud. It
+ * relies on a message Govee does not document, so each model is tried with a test pattern
+ * before it is switched on.
+ */
+function LocalDesignsCard() {
+  const { status, devices, settings } = useSnap();
+  // Shown at once rather than after the server confirms, so a switch does not flick back.
+  const [on, setOn] = useState(settings.localDesigns ?? []);
+  const saved = (settings.localDesigns ?? []).join(',');
+  useEffect(() => setOn(saved ? saved.split(',') : []), [saved]);
+  const [testing, setTesting] = useState<string | null>(null);
+
+  const models = [...new Set(devices.filter((d) => d.caps.segments > 1).map((d) => d.sku))].map((sku) => {
+    const lights = devices.filter((d) => d.sku === sku);
+    return { sku, kind: lights[0].kind, lights: lights.length, near: lights.filter((d) => d.local).length };
+  });
+  if (!status.lan.enabled || status.lan.error || models.length === 0) return null;
+
+  const test = async (sku: string) => {
+    setTesting(sku);
+    const result = await attempt(api<{ sent: string[] }>('POST', '/lan/test', { sku }));
+    if (result) toast(`Sent to ${plural(result.sent.length, 'light')}. Each should now be green, blue and red along its length.`);
+    setTesting(null);
+  };
+  const change = (sku: string, value: boolean) => {
+    const next = value ? [...on.filter((s) => s !== sku), sku] : on.filter((s) => s !== sku);
+    setOn(next);
+    void attempt(api('PUT', '/settings', { localDesigns: next }));
+  };
+
+  return (
+    <section className="card">
+      <h2>
+        Designs over your own network <span className="badge">Experimental</span>
+      </h2>
+      <p className="muted small">
+        Multi-colour designs normally go through Govee’s cloud, one request per colour. They can instead go straight to lights that answer on your network: at once, using no requests, and a moving look then takes a small step every few seconds whatever its pattern. This uses a message Govee does not document, so try it on each model before
+        switching it on.
+      </p>
+      <div className="rows">
+        {models.map((m) => (
+          <div key={m.sku} className="model-row">
+            <div className="model-name">
+              <strong>
+                {MODEL_NAMES[m.kind]} · {m.sku}
+              </strong>
+              <small>{m.near === 0 ? 'None answer on your network yet' : `${m.near} of ${m.lights} answer on your network`}</small>
+            </div>
+            <button type="button" className="btn sm" aria-label={`Test ${m.sku}`} disabled={m.near === 0 || testing !== null} onClick={() => void test(m.sku)}>
+              {testing === m.sku ? 'Sending…' : 'Test'}
+            </button>
+            <Toggle on={on.includes(m.sku)} label={`Send designs for ${m.sku} over your network`} onChange={(value) => change(m.sku, value)} />
+          </div>
+        ))}
+      </div>
+      <p className="muted small">
+        <strong>Test</strong> switches that model’s lights on and sends each a pattern this way only: green at its start, blue in the middle, red at its end. If that is what you see, switch the model on. If the lights do not change, leave it off: the model does not take the message, and nothing is lost. A light that stops answering on your
+        network goes back to the cloud by itself.
+      </p>
+    </section>
   );
 }
 
@@ -477,7 +545,7 @@ function DeviceRow({ device, move, first, last }: { device: Device; move: (by: -
       <div className="order-row">
         <small>
           {MODEL_NAMES[device.kind]} · {device.sku}
-          {device.caps.segments > 0 && ` · ${device.caps.segments} segments`} · {device.local ? 'reached locally' : 'reached through the cloud'}
+          {device.caps.segments > 0 && ` · ${device.caps.segments} segments`} · {device.localDesigns ? 'reached locally, designs too' : device.local ? 'reached locally' : 'reached through the cloud'}
         </small>
         {device.caps.segments > 1 && (
           <label className="check">

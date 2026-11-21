@@ -65,6 +65,16 @@ for (const [device, viewport] of [
         for (const height of await heights(page, '.settings .toggle')) expect(height).toBeLessThanOrEqual(40);
       });
 
+      await test.step('each model in the local designs card is a row, with its button and switch inside the card', async () => {
+        await expect(page.locator('.model-row')).toHaveCount(2);
+        for (const height of await heights(page, '.model-row')) expect(height).toBeLessThanOrEqual(90);
+        const card = (await page.locator('.card', { hasText: 'Designs over your own network' }).first().boundingBox())!;
+        for (const toggle of await page.locator('.model-row .toggle').all()) {
+          const box = (await toggle.boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+        }
+      });
+
       await test.step('no section scrolls sideways', async () => {
         for (const section of ['Looks', 'Schedules', 'Help', 'Lights']) {
           await page.locator('.nav').getByRole('button', { name: section, exact: true }).click();

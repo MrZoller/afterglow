@@ -14,6 +14,8 @@ interface SharedLight {
   brightness: number;
   colorRgb: number;
   colorTemperatureK: number;
+  segments?: number;
+  segmentColors?: number[];
 }
 
 export interface FakeLan {
@@ -24,15 +26,43 @@ export interface FakeLan {
   /** Makes a light stop answering, as if it dropped off the network. */
   mute(device: string): void;
   unmute(device: string): void;
+  /** Makes a light ignore designs sent with `ptReal`, like a model that does not take that message. */
+  plain(device: string, on?: boolean): void;
+  /** Messages dropped because they arrived while a light was still busy with the one before. */
+  dropped: number;
   close(): Promise<void>;
 }
 
 const bind = (socket: dgram.Socket) => new Promise<number>((resolve) => socket.bind(0, '127.0.0.1', () => resolve((socket.address() as AddressInfo).port)));
 
-export async function startFakeLan(lights: SharedLight[]): Promise<FakeLan> {
+/** Frames in one `ptReal` message beyond which the simulated lights drop it whole, as real ones have been seen to. */
+const TOO_MANY_FRAMES = 18;
+
+export async function startFakeLan(
+  lights: SharedLight[],
+  opts: {
+    /** How long a light is busy after a message; one arriving sooner is dropped, as real lights have been seen to do. */
+    busyMs?: number;
+  } = {},
+): Promise<FakeLan> {
   const received: FakeLan['received'] = [];
   const muted = new Set<string>();
+  const plain = new Set<string>();
   const sockets: dgram.Socket[] = [];
+  const busyUntil = new Map<string, number>();
+  let dropped = 0;
+
+  /** Acts on the frames of a `ptReal` message that set segment colours; anything malformed is ignored, as a light would. */
+  const paint = (light: SharedLight, frames: unknown) => {
+    if (!Array.isArray(frames) || frames.length > TOO_MANY_FRAMES || !light.segmentColors) return;
+    for (const encoded of frames) {
+      const bytes = Buffer.from(String(encoded), 'base64');
+      if (bytes.length !== 20 || bytes.subarray(0, 19).reduce((x, b) => x ^ b, 0) !== bytes[19]) continue;
+      if (bytes[0] !== 0x33 || bytes[1] !== 0x05 || bytes[2] !== 0x15 || bytes[3] !== 0x01) continue;
+      const rgb = (bytes[4] << 16) | (bytes[5] << 8) | bytes[6];
+      for (let i = 0; i < light.segmentColors.length; i++) if (bytes[12 + (i >> 3)] & (1 << (i & 7))) light.segmentColors[i] = rgb;
+    }
+  };
 
   const units = await Promise.all(
     lights.map(async (light) => {
@@ -47,6 +77,14 @@ export async function startFakeLan(lights: SharedLight[]): Promise<FakeLan> {
         } catch {
           return;
         }
+        if (opts.busyMs) {
+          const now = Date.now();
+          if (now < (busyUntil.get(light.device) ?? 0)) {
+            dropped += 1;
+            return;
+          }
+          busyUntil.set(light.device, now + opts.busyMs);
+        }
         if (msg.cmd !== 'devStatus') received.push({ device: light.device, cmd: msg.cmd, data: msg.data });
         if (msg.cmd === 'turn') light.power = msg.data.value ? 1 : 0;
         else if (msg.cmd === 'brightness') light.brightness = msg.data.value;
@@ -55,7 +93,10 @@ export async function startFakeLan(lights: SharedLight[]): Promise<FakeLan> {
           else {
             light.colorRgb = (msg.data.color.r << 16) | (msg.data.color.g << 8) | msg.data.color.b;
             light.colorTemperatureK = 0;
+            light.segmentColors?.fill(light.colorRgb);
           }
+        } else if (msg.cmd === 'ptReal') {
+          if (!plain.has(light.device)) paint(light, msg.data?.command);
         } else if (msg.cmd === 'devStatus') {
           const color = { r: (light.colorRgb >> 16) & 255, g: (light.colorRgb >> 8) & 255, b: light.colorRgb & 255 };
           const reply = { msg: { cmd: 'devStatus', data: { onOff: light.power, brightness: light.brightness, color, colorTemInKelvin: light.colorTemperatureK } } };
@@ -84,6 +125,10 @@ export async function startFakeLan(lights: SharedLight[]): Promise<FakeLan> {
     received,
     mute: (device) => void muted.add(device),
     unmute: (device) => void muted.delete(device),
+    plain: (device, on = true) => void (on ? plain.add(device) : plain.delete(device)),
+    get dropped() {
+      return dropped;
+    },
     close: () => Promise.all(sockets.map((s) => new Promise<void>((resolve) => s.close(() => resolve())))).then(() => undefined),
   };
 }

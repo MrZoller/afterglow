@@ -79,7 +79,8 @@ npm run test:e2e:all
 ## Rules the code relies on
 
 - **Every change to a light goes through `hub.apply`.** It works out each light's share of a design, updates state, ends movement and schedule follow-ups where it should, and writes the activity log. Do not call the Govee clients from anywhere else. To bring one light of several into line, pass all the targets with `only`, so the light keeps its share.
-- **Cloud commands go through the queue.** Govee limits requests per light and per day. Each distinct colour on a light is one request, so anything that repeats (movement, retries) must have a budget. Local-network commands skip the pacing.
+- **Cloud commands go through the queue.** Govee limits requests per light and per day. Each distinct colour on a light is one request, so anything that repeats (movement, retries) must have a budget. Local-network commands skip the pacing, but `server/govee/lan.ts` spaces messages to the same light, because a light drops one that arrives while it is busy.
+- **Local designs use an undocumented message.** `ptReal` carries frames of Govee's Bluetooth protocol; nothing confirms a light acted on one. Keep it behind the per-model switch, keep the cloud fallback, and do not extend it to new kinds of frame without a way for the owner to see the result.
 - **Validate at the edge.** Input from the REST API and the MCP tools is parsed with the zod schemas in `server/ops.ts`. Code past that point can trust its data.
 - **New saved data needs a default and a place in backups.** Add the field to `empty()` in `server/store.ts` so older data files still load, and to the document in `server/backup.ts` if the user created it.
 - **Teach the simulators first.** When you use a new part of a Govee API, add it to the matching simulator and test against that. Behaviour that could not be checked on real lights goes under "Known gaps" in the changelog.

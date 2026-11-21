@@ -129,7 +129,7 @@ function build(services: Services): McpServer {
           brightness: d.state.brightness,
           showing: showing(d),
           moving: d.moving || undefined,
-          reached: d.local ? 'local network' : 'cloud',
+          reached: d.localDesigns ? 'local network, including multi-colour designs' : d.local ? 'local network' : 'cloud',
           segments: d.caps.segments,
           online: d.state.online,
           // How often it could not be reached lately; several a week usually means weak Wi-Fi at the light.

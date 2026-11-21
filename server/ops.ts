@@ -82,6 +82,7 @@ export const settingsSchema = z.object({
     .optional(),
   swatches: z.array(rgb).max(24).optional(),
   catchUp: z.boolean().optional(),
+  localDesigns: z.array(z.string().min(1).max(20)).max(50).optional(),
 });
 
 export class Ops {
@@ -194,8 +195,10 @@ export class Ops {
     if (data.location !== undefined) settings.location = data.location;
     if (data.swatches !== undefined) settings.swatches = data.swatches;
     if (data.catchUp !== undefined) settings.catchUp = data.catchUp;
+    if (data.localDesigns !== undefined) settings.localDesigns = [...new Set(data.localDesigns)];
     this.store.save();
-    this.changed('settings', 'schedules', 'status');
+    // Which lights take designs locally is part of how each light is shown.
+    this.changed('settings', 'schedules', 'status', 'devices');
     return settings;
   }
 }

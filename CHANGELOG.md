@@ -6,6 +6,7 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Added
 
+- **Multi-colour designs over your own network (experimental).** Designs with several colours can be sent straight to lights that answer locally, instead of through Govee's cloud one request per colour. Where a model takes the message, a design appears at once and uses no requests, and a moving look steps every few seconds whatever its pattern. It is off until switched on per model under Settings → Designs over your own network, where a **Test** button sends a green, blue and red pattern by this route only so you can see whether the model responds. A light that stops answering locally goes back to the cloud.
 - **Catching up on missed schedules.** If the computer was off or asleep when a schedule was due, Afterglow carries it out when it is next running, provided it is less than 24 hours old. Each light gets whatever the schedules last said it should be doing, and lights used in the app since are left alone. Settings → Missed schedules has a switch to turn this off.
 - **Schedule starts are followed up**, the way turn-offs already were: each light is asked 1, 3, 10, 30 and 60 minutes later whether it came on, and sent the schedule again if not. A light that joins late gets its own share of the design, including its part of a run of joined lights, and joins a moving look where the others have got to.
 - **A light still not right after the hour is tried every ten minutes for up to a day**, for starts and turn-offs alike, so one that returns after a power cut or a Wi-Fi drop is brought into line then. The schedule's card says "Still trying to turn off" or "Still trying to start" and names the lights.
@@ -17,6 +18,7 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Changed
 
+- Messages sent to a light over the local network are now at least 150 ms apart. Lights are reported to drop a message that arrives while they are busy with the one before, and the app used to follow a command with its status query after 120 ms.
 - A schedule missed by more than ten minutes used to be skipped. It is now carried out late (see above).
 - When several schedules come due together, each light is sent only the one that wins, rather than each in turn.
 
@@ -28,6 +30,7 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 These additions were developed against simulated lights and a stand-in for the notification service:
 
+- Designs over your own network have not been sent to any real light. The message is undocumented; its layout follows two community projects, neither of which lists the H61A9 or H7086 as tried, and the Home Assistant library lists both models without local segment support. The Test button exists to find out. Also unknown: whether segments are numbered the same way locally as through the cloud, and whether a light already playing a scene switches to the design.
 - Notifications have not been sent through the real ntfy service or seen on a phone. The format follows ntfy's documentation.
 - Whether Govee's cloud refuses a command for a light that is off the network, or accepts it and does nothing. Both are followed up, but only the simulated versions have been seen.
 - How quickly, and how reliably, Govee reports a light as offline and as back. The dropout record and catching up both depend on it for lights not reached locally.

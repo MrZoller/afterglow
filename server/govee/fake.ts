@@ -16,6 +16,8 @@ interface FakeLight {
   brightness: number;
   colorRgb: number;
   colorTemperatureK: number;
+  /** What each segment is showing. Real lights do not report this; the simulators keep it so tests can look. */
+  segmentColors: number[];
 }
 
 export interface FakeGovee {
@@ -45,6 +47,7 @@ function lights(): FakeLight[] {
     brightness: 80,
     colorRgb: rgb,
     colorTemperatureK: 0,
+    segmentColors: Array<number>(segments).fill(rgb),
   });
   return [
     make('H61A9', 'Front fence rope', 1, 15, true, 0xff8a1f),
@@ -201,7 +204,9 @@ export async function startFakeGovee(
     else if (instance === 'colorRgb') {
       light.colorRgb = value;
       light.colorTemperatureK = 0;
+      light.segmentColors.fill(value);
     } else if (instance === 'colorTemperatureK') light.colorTemperatureK = value;
+    else if (instance === 'segmentedColorRgb') for (const i of value?.segment ?? []) if (i >= 0 && i < light.segments) light.segmentColors[i] = value.rgb;
     res.json({ requestId: req.body.requestId, msg: 'success', code: 200, capability: { ...capability, state: { status: 'success' } } });
   });
 

@@ -61,6 +61,8 @@ export interface Device {
   moving: boolean;
   /** True when the light answers on the local network, so simple commands skip Govee's cloud. */
   local: boolean;
+  /** True when multi-colour designs for this light also go over the local network (see Settings.localDesigns). */
+  localDesigns: boolean;
   /** True when the light is mounted with its last segment where designs should start. */
   reversed: boolean;
   /** Commands waiting to be sent. */
@@ -186,6 +188,12 @@ export interface Settings {
    * reached) is carried out late. On unless set to false.
    */
   catchUp?: boolean;
+  /**
+   * Models (by SKU) whose multi-colour designs are sent straight to the lights instead of
+   * through Govee's cloud. Experimental: it relies on a message Govee does not document,
+   * so it is off until the owner has seen it work on a model.
+   */
+  localDesigns?: string[];
 }
 
 export type Source = 'app' | 'schedule' | 'agent';

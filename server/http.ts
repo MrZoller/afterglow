@@ -252,6 +252,12 @@ export function createApi(services: Services, events: Events): express.Router {
 
   api.put('/settings', (req, res) => void res.json(ops.updateSettings(req.body)));
 
+  /** Sends a test pattern to one model's lights by the local route only, to see whether that model takes designs that way. */
+  api.post('/lan/test', async (req, res) => {
+    const { sku } = z.object({ sku: z.string().min(1).max(20) }).parse(req.body);
+    res.json(await hub.testLocalDesigns(sku));
+  });
+
   /** Sends a notification now, so the owner can see that it reaches their phone. */
   api.post('/notify/test', async (_req, res) => {
     if (!notifier.enabled) throw new HttpError(400, notifier.error ?? 'Notifications are not set up');

@@ -32,6 +32,7 @@ const documentSchema = z.object({
     location: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180), label: z.string().max(60).default('') }).nullable(),
     swatches: z.array(rgb).max(24),
     catchUp: z.boolean().optional(),
+    localDesigns: z.array(z.string().max(20)).max(50).optional(),
   }),
   order: z.array(z.string()).max(500).default([]),
   seeded: z.array(z.string()).max(200).optional(),

@@ -1385,6 +1385,27 @@ select.input {
   flex: 1;
 }
 
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 12px 6px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.model-name {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.model-name small {
+  color: var(--text-3);
+}
+
 .row-btn small {
   color: var(--text-3);
   font-weight: 500;

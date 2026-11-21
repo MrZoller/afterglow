@@ -21,7 +21,7 @@ An AI assistant connected over MCP can do everything the page can: control light
 
 - **Govee's cloud API**: commands and state reads for your lights, authenticated with your Govee key.
 - **Anthropic's API**, only when you use Describe a look: your description, the look being edited, how many lights and segments you have, and the names of built-in scenes. Light names, zones and location are not sent.
-- **Your local network**: UDP messages to the lights on ports 4001 to 4003 when local control is on.
+- **Your local network**: UDP messages to the lights on ports 4001 to 4003 when local control is on. With designs over your own network switched on, these include a message Govee does not document; it goes only to your own lights.
 - **A notification service**, only when `NOTIFY_URL` is set: a short message naming the schedule and the lights concerned, the time, and an address that opens Afterglow on your network, posted to the address you chose. With ntfy.sh, anyone who knows the topic name can read these, so choose one that cannot be guessed, or run your own ntfy server.
 
 Nothing else is sent anywhere. There is no telemetry.

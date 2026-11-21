@@ -47,7 +47,7 @@ export const HELP: HelpTopic[] = [
         question: 'Why does a card say “Sending…”?',
         answer: [
           'Govee only accepts so many messages per light at a time through its cloud, so the app sends them in order at a safe pace. A design with several colours is one message per colour, which is why it can take a few seconds to finish.',
-          'Lights reached over your own network do not have this limit for on/off, brightness, single colours and white.',
+          'Lights reached over your own network do not have this limit for on/off, brightness, single colours and white, nor for designs on models where **Designs over your own network** is switched on in [Settings](#/settings).',
         ],
       },
       {
@@ -96,6 +96,7 @@ export const HELP: HelpTopic[] = [
             ],
           },
           'Solid and One per light move in the smallest steps. On lights reached over your own network they step every few seconds; through Govee’s cloud a step is about every minute.',
+          'On models where **Designs over your own network** is switched on in [Settings](#/settings), every pattern steps every few seconds.',
         ],
       },
       {
@@ -247,8 +248,29 @@ export const HELP: HelpTopic[] = [
       {
         question: 'What is the difference?',
         answer: [
-          'The app can reach a light two ways. Straight over your home network is instant, uses none of your Govee allowance and works when the internet is down, but can only set power, brightness, a single colour or white. Through Govee’s cloud is slower and rationed, but is the only way to send multi-colour designs and Govee scenes.',
+          'The app can reach a light two ways. Straight over your home network is instant, uses none of your Govee allowance and works when the internet is down, but as Govee documents it can only set power, brightness, a single colour or white. Through Govee’s cloud is slower and rationed, but is the supported way to send multi-colour designs, and the only way to start Govee scenes.',
           'The app picks the best route for each command by itself.',
+        ],
+      },
+      {
+        question: 'Can multi-colour designs go over my own network too?',
+        answer: [
+          'Yes, as an experiment. A light can be sent a design directly using a message Govee does not document. Where a model takes it, designs appear at once, use none of your Govee allowance, work when the internet is down, and moving looks step every few seconds whatever their pattern.',
+          {
+            steps: [
+              'Turn on **LAN Control** for the lights in the Govee Home app, as described below.',
+              'Under **Designs over your own network** in [Settings](#/settings), press **Test** beside a model. Its lights switch on and are each sent a pattern this way only.',
+              'Look at the lights. Each should be green at its start, blue in the middle and red at its end.',
+              'If they are, turn on the switch beside that model. If nothing changed, or the colours are in another order, leave it off.',
+            ],
+          },
+          {
+            list: [
+              'The app cannot tell whether a light acted on the message, only that the light is still answering. That is why you check by eye before switching a model on.',
+              'A firmware update from Govee could stop a model taking the message. If designs stop appearing on a model, switch it off here and they go through the cloud again.',
+              'A light that stops answering on your network goes back to the cloud by itself. Govee scenes always go through the cloud.',
+            ],
+          },
         ],
       },
       {

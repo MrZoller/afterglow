@@ -3,8 +3,8 @@ import { kelvinToRgb, toHex } from '../shared/color';
 import { canMove, groupByColor, placeColors, placedCost, placedStepSeconds, placeLights, renderPlaced, type Placement } from '../shared/looks';
 import type { Action, ApplySummary, Device, DeviceKind, DeviceState, Look, RGB, SceneChoice, Source } from '../shared/types';
 import { Animator } from './animator';
-import { GoveeError, type CloudState, type Command, type DeviceInfo, type GoveeCloud, type SceneOption } from './govee/cloud';
-import { isLanCommand, type GoveeLan, type LanCommand } from './govee/lan';
+import { GoveeError, RateLimitError, type CloudState, type Command, type DeviceInfo, type GoveeCloud, type SceneOption } from './govee/cloud';
+import { isLanCommand, MAX_PAINT_SEGMENTS, type GoveeLan, type LanCommand } from './govee/lan';
 import { CommandQueue } from './queue';
 import type { Store } from './store';
 
@@ -37,6 +37,15 @@ interface Plan {
   patch: (state: DeviceState) => void;
 }
 
+/** A whole multi-colour design for one light, sent straight to it in one go rather than colour by colour through the cloud. */
+interface Paint {
+  cap: 'paint';
+  groups: { rgb: RGB; segments: number[] }[];
+}
+
+/** Something to send to a light: one of Govee's commands, or a design painted locally. */
+type Order = Command | Paint;
+
 export interface ApplyResult {
   summary: ApplySummary;
   /** Settles once every command has been sent or has failed. */
@@ -58,8 +67,11 @@ const blankState = (): DeviceState => ({
   syncedAt: null,
 });
 
-const slotOf = (cmd: Command): string =>
+const slotOf = (cmd: Order): string =>
   cmd.cap === 'power' ? 'power' : cmd.cap === 'brightness' ? 'brightness' : cmd.cap === 'toggle' ? `toggle:${cmd.instance}` : 'appearance';
+
+/** Cloud requests a light takes back to back before they have to be spaced out, as in the command queue. */
+const CLOUD_BURST = 5;
 
 const sceneKey = (s: { kind: string; name: string }) => `${s.kind}:${s.name.toLowerCase()}`;
 
@@ -96,8 +108,8 @@ export class Hub extends EventEmitter {
         const e = this.entries.get(light.id);
         if (!e) return null;
         const placement: Placement = { segments: e.info.caps.segments, index: light.index, offset: light.offset, total: light.total, reversed: e.reversed };
-        // A frame can go locally only when it is a single colour for the whole light.
-        const local = !!this.lan?.has(light.id) && placedCost(look, placement) === 1;
+        // A single colour can always go locally; several colours only where local designs are switched on.
+        const local = !!this.lan?.has(light.id) && (placedCost(look, placement) === 1 || this.paintsLocally(e));
         return { placement, local, stepSeconds: placedStepSeconds(look, placement, local) };
       },
       paint: (id, colors) => this.paintFrame(id, colors),
@@ -149,6 +161,7 @@ export class Hub extends EventEmitter {
       state: e.state,
       moving: this.animator.has(e.info.id),
       local: !!this.lan?.has(e.info.id),
+      localDesigns: this.paintsLocally(e),
       reversed: !!e.reversed,
       pending: this.queue.pending(e.info.id),
       error: e.error,
@@ -522,9 +535,11 @@ export class Hub extends EventEmitter {
      * itself, such as a resend. `only` limits it to some of the targets while still working
      * out each light's share from all of them, so a light that missed a design gets the
      * part it would have had. `since` is when the others were given it, so that a moving
-     * look is joined where it has got to rather than from its beginning.
+     * look is joined where it has got to rather than from its beginning. `localOnly` sends
+     * multi-colour designs straight to the lights whatever the setting, and never falls back
+     * to the cloud: it is how the owner tries local designs on a model before switching them on.
      */
-    opts: { quiet?: boolean; internal?: boolean; only?: string[]; since?: number } = {},
+    opts: { quiet?: boolean; internal?: boolean; only?: string[]; since?: number; localOnly?: boolean } = {},
   ): Promise<ApplyResult> {
     const everyone = this.resolve(targets);
     if (everyone.length === 0) throw new HttpError(400, 'No lights match those targets');
@@ -565,7 +580,12 @@ export class Hub extends EventEmitter {
         summary.skipped.push({ deviceId: id, name, reason: plan.skip });
         return;
       }
-      const slots = new Set(plan.cmds.map(slotOf));
+      if (opts.localOnly && !(this.lan?.has(id) && this.paintable(e))) {
+        summary.skipped.push({ deviceId: id, name, reason: 'not reached on your network' });
+        return;
+      }
+      const orders = this.route(e, plan.cmds, !!opts.localOnly);
+      const slots = new Set(orders.map(slotOf));
       // Switching off also abandons colour changes that have not gone out yet.
       if (action.type === 'power' && !action.on) ['appearance', 'brightness'].forEach((s) => slots.add(s));
       this.queue.cancel(id, [...slots]);
@@ -576,10 +596,10 @@ export class Hub extends EventEmitter {
       summary.applied.push(id);
 
       let reported = false;
-      for (const cmd of plan.cmds) {
+      for (const cmd of orders) {
         jobs.push(
           this.queue
-            .push(id, slotOf(cmd), () => this.deliver(e, cmd), this.goesLocal(e, cmd))
+            .push(id, slotOf(cmd), () => this.deliver(e, cmd, !!opts.localOnly), this.goesLocal(e, cmd))
             .then(
               () => {
                 if (e.error) {
@@ -609,7 +629,7 @@ export class Hub extends EventEmitter {
     // A moving look takes over the lights it was applied to; anything else that changes
     // how a light looks, or switches it off, ends the movement there.
     const applied = entries.flatMap((e, i) => {
-      if ('skip' in plans[i]) return [];
+      if ('skip' in plans[i] || !summary.applied.includes(e.info.id)) return [];
       const { index, offset, total } = places.get(e.info.id)!;
       return [{ id: e.info.id, index, offset, total }];
     });
@@ -681,14 +701,100 @@ export class Hub extends EventEmitter {
     }
   }
 
-  private goesLocal(e: Entry, cmd: Command): boolean {
+  /** True when this light's multi-colour designs are sent straight to it: it answers locally and the owner has switched that on for its model. */
+  private paintsLocally(e: Entry): boolean {
+    return !!this.lan?.has(e.info.id) && this.paintable(e) && (this.store.data.settings.localDesigns ?? []).includes(e.info.sku);
+  }
+
+  /** Whether a light has segments, and few enough for a local design to address them. */
+  private paintable(e: Entry): boolean {
+    return e.info.caps.segments > 1 && e.info.caps.segments <= MAX_PAINT_SEGMENTS;
+  }
+
+  /**
+   * Sends a pattern to every light of a model by the local route only, so the owner can
+   * see whether that model takes designs this way: green at the start of each light,
+   * blue in the middle, red at the end.
+   */
+  async testLocalDesigns(sku: string): Promise<{ sent: string[]; failed: string[] }> {
+    const lights = this.ordered().filter((e) => e.info.sku === sku && this.paintable(e));
+    if (lights.length === 0) throw new HttpError(404, 'No lights of that model have segments to colour');
+    const near = lights.filter((e) => this.lan?.has(e.info.id));
+    if (near.length === 0) throw new HttpError(400, 'None of those lights answer on your network yet. Turn on LAN Control for them in the Govee Home app.');
+    const pattern: Action = { type: 'palette', colors: [0x00ff00, 0x0000ff, 0xff0000], pattern: 'blocks', brightness: null };
+    // One light at a time, so each shows the whole pattern even when it is part of a joined run.
+    const results = await Promise.all(
+      near.map(async (e) => {
+        const result = await this.apply([e.info.id], pattern, 'app', { localOnly: true, quiet: true });
+        const { failed } = await result.done;
+        return { name: e.alias ?? e.info.goveeName, ok: result.summary.applied.length > 0 && failed.length === 0 };
+      }),
+    );
+    const sent = results.filter((r) => r.ok).map((r) => r.name);
+    const failed = results.filter((r) => !r.ok).map((r) => r.name);
+    this.store.log({ source: 'app', ok: sent.length > 0, text: `Test pattern sent over your network to ${sent.length} of ${near.length} ${sku} light${near.length === 1 ? '' : 's'}`, detail: failed.length ? `no answer from ${failed.join(', ')}` : undefined });
+    this.emit('activity');
+    if (sent.length === 0) throw new HttpError(502, 'The lights did not answer on your network');
+    return { sent, failed };
+  }
+
+  /** Gathers a design's colours into one local message where the light takes those, leaving everything else as it was. */
+  private route(e: Entry, cmds: Command[], force = false): Order[] {
+    const groups = cmds.flatMap((c) => (c.cap === 'segmentColor' ? [{ rgb: c.rgb, segments: c.segments }] : []));
+    if (groups.length === 0 || !(force || this.paintsLocally(e))) return cmds;
+    const at = cmds.findIndex((c) => c.cap === 'segmentColor');
+    const rest: Order[] = cmds.filter((c) => c.cap !== 'segmentColor');
+    rest.splice(at, 0, { cap: 'paint', groups });
+    return rest;
+  }
+
+  private goesLocal(e: Entry, cmd: Order): boolean {
+    if (cmd.cap === 'paint') return true;
     return !!this.lan && isLanCommand(cmd) && this.lan.has(e.info.id);
   }
 
   /** Sends over the local network when the light and the command allow it, otherwise through the cloud. */
-  private async deliver(e: Entry, cmd: Command): Promise<void> {
+  private async deliver(e: Entry, cmd: Order, localOnly = false): Promise<void> {
+    if (cmd.cap === 'paint') return this.deliverPaint(e, cmd, localOnly);
     if (this.goesLocal(e, cmd) && (await this.sendLocal(e, cmd as LanCommand))) return;
     await this.cloud.send(e.info, cmd);
+  }
+
+  /**
+   * Paints a design straight onto the light. The light gives no receipt and cannot report
+   * its segments, so the most that can be confirmed is that it is still answering; if it
+   * is not, the colours go through the cloud instead, spaced as the queue would space them.
+   */
+  private async deliverPaint(e: Entry, paint: Paint, localOnly: boolean): Promise<void> {
+    const lan = this.lan;
+    const id = e.info.id;
+    if (lan?.has(id)) {
+      try {
+        await lan.paint(id, paint.groups, e.info.caps.segments);
+        await sleep(this.confirmDelayMs);
+        if (await lan.status(id)) return;
+      } catch {
+        // Fall through: the light is treated as gone from the local network.
+      }
+      lan.forget(id);
+    }
+    if (localOnly) throw new Error('The light did not answer on your network');
+    for (const [i, group] of paint.groups.entries()) {
+      if (i >= CLOUD_BURST) await sleep(1_000);
+      await this.sendPatiently(e, { cap: 'segmentColor', segments: group.segments, rgb: group.rgb });
+    }
+  }
+
+  /** A cloud command sent outside the queue's pacing, waiting as long as Govee asks when it says to slow down. */
+  private async sendPatiently(e: Entry, cmd: Command, attempts = 3): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.cloud.send(e.info, cmd);
+      } catch (err) {
+        if (!(err instanceof RateLimitError) || attempt >= attempts) throw err;
+        await sleep(err.retryAfterMs ?? 5_000);
+      }
+    }
   }
 
   /**
@@ -726,7 +832,7 @@ export class Hub extends EventEmitter {
     // Nothing to send when this step lands on the colours already showing.
     if (JSON.stringify(appearance) === JSON.stringify(e.state.appearance)) return true;
 
-    const cmds: Command[] = single ? [{ cap: 'color', rgb: groups[0].rgb }] : groups.map((g) => ({ cap: 'segmentColor', segments: g.segments, rgb: g.rgb }));
+    const cmds = this.route(e, single ? [{ cap: 'color', rgb: groups[0].rgb }] : groups.map((g) => ({ cap: 'segmentColor', segments: g.segments, rgb: g.rgb })));
     this.queue.cancel(id, ['appearance']);
     e.state.appearance = appearance;
     e.state.updatedAt = Date.now();

@@ -279,8 +279,8 @@ export function LookEditor({ look, onClose, tryOn = 'all', assist }: { look: Loo
     const plans = lights.map((d) => {
       const place = places.get(d.id)!;
       const cost = placedCost(draft, place);
-      // Only a single colour for the whole light can go over the local network.
-      const local = d.local && cost === 1;
+      // A single colour can always go over the local network; several only where local designs are switched on.
+      const local = d.local && (cost === 1 || d.localDesigns);
       return { local, cost, step: placedStepSeconds(draft, place, local) };
     });
     const near = plans.filter((p) => p.local);

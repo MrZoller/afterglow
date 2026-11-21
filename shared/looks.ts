@@ -164,8 +164,9 @@ export function placedCost(look: Renderable, p: Placement): number {
 /**
  * Seconds between steps of a moving look on one light: short enough to look gradual,
  * and for cloud commands long enough that the light stays within its hourly allowance.
- * @param local true when the light can be driven over the local network, which has no
- *   request limit but can only set one colour for the whole light
+ * @param local true when this light's frames go over the local network, which has no
+ *   request limit. That is always possible for a single colour, and for several colours
+ *   only where the owner has switched on local designs for the model.
  */
 export function placedStepSeconds(look: Renderable, p: Placement, local = false): number {
   if (!look.motion) return 0;
@@ -173,7 +174,7 @@ export function placedStepSeconds(look: Renderable, p: Placement, local = false)
   const colours = Math.max(2, look.colors.length);
   const cost = placedCost(look, p);
   // Locally there is nothing to ration, so take many small steps: 60 between neighbouring colours.
-  if (local && cost === 1) return Math.max(5, Math.min(60, Math.round(loop / (colours * 60))));
+  if (local) return Math.max(5, Math.min(60, Math.round(loop / (colours * 60))));
   const gradual = loop / (colours * 8);
   const allowance = (cost * 3600) / MOTION_REQUESTS_PER_LIGHT_HOUR;
   return Math.round(Math.max(30, gradual, allowance) / 5) * 5;

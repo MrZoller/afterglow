@@ -85,9 +85,9 @@ describe('moving looks', () => {
     assert.equal(motionStepSeconds(moving('solid'), 15, 0, true), 10);
     assert.equal(motionStepSeconds({ ...moving('perLight'), motion: { loopMinutes: 10 } }, 15, 1, true), 5);
     assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 240 } }, 15, 0, true), 60);
-    // Several colours on one light cannot be sent locally, so the cloud pace applies even there.
-    assert.equal(motionStepSeconds(moving('blocks'), 15, 0, true), 145);
-    assert.equal(motionStepSeconds(moving('blocks'), 0, 0, true), 10); // a light without segments shows one colour
+    // The same holds for several colours on one light, where its designs are sent locally too.
+    assert.equal(motionStepSeconds(moving('blocks'), 15, 0, true), 10);
+    assert.equal(motionStepSeconds(moving('blocks'), 15, 0, false), 145);
   });
 });
 
