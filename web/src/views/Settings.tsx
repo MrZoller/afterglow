@@ -300,35 +300,55 @@ function DeviceRow({ device, move, first, last }: { device: Device; move: (by: -
 }
 
 function AgentCard({ authRequired }: { authRequired: boolean }) {
-  const url = `${window.location.origin}/mcp`;
-  const command = `claude mcp add --transport http afterglow ${url}${authRequired ? ' --header "Authorization: Bearer YOUR_PASSPHRASE"' : ''}`;
-  const copy = (text: string) =>
-    navigator.clipboard?.writeText(text).then(
-      () => toast('Copied'),
-      () => toast('Could not copy; select the text instead', 'error'),
-    ) ?? toast('Could not copy; select the text instead', 'error');
+  const { status } = useSnap();
+  const here = window.location.origin;
+  // The same server answers on every address, so the right one is whichever the agent's machine can reach.
+  const known = status.addresses.map((a) => ({ label: a.label, url: a.url }));
+  const options = known.some((o) => o.url === here) ? known : [{ label: 'The address you are using now', url: here }, ...known];
+  const [picked, setPicked] = useState(here);
+  const chosen = options.find((o) => o.url === picked) ?? options[0];
+  const command = `claude mcp add --transport http afterglow ${chosen.url}/mcp${authRequired ? ' --header "Authorization: Bearer YOUR_PASSPHRASE"' : ''}`;
 
   return (
     <section className="card">
       <h2>AI agents</h2>
-      <p className="muted small">Afterglow has a built-in MCP server, so an assistant such as Claude can see your lights, change them, and manage looks and schedules. Point it at this address:</p>
-      <Group label="MCP address">
-        <div className="copy-row">
-          <code>{url}</code>
-          <button type="button" className="icon-btn" aria-label="Copy MCP address" onClick={() => void copy(url)}>
-            <CopyIcon size={16} />
-          </button>
-        </div>
-      </Group>
+      <p className="muted small">
+        Afterglow has a built-in MCP server, so an assistant such as Claude can see your lights, change them, and manage looks and schedules. Give the agent the address that its machine can reach: <code>localhost</code> only
+        works on this computer, while the Tailscale address works from any device on your tailnet.
+      </p>
+      <div className="rows">
+        {options.map((o) => (
+          <Group key={o.url} label={`MCP address · ${o.label.toLowerCase()}`}>
+            <div className="copy-row">
+              <code>{o.url}/mcp</code>
+              <button type="button" className="icon-btn" aria-label={`Copy ${o.url}/mcp`} onClick={() => void copyText(`${o.url}/mcp`)}>
+                <CopyIcon size={16} />
+              </button>
+            </div>
+          </Group>
+        ))}
+      </div>
       <Group label="Claude Code">
+        {options.length > 1 && (
+          <select className="input" aria-label="Where the agent runs" value={chosen.url} onChange={(e) => setPicked(e.target.value)}>
+            {options.map((o) => (
+              <option key={o.url} value={o.url}>
+                {o.label}: {o.url.replace(/^https?:\/\//, '')}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="copy-row">
           <code>{command}</code>
-          <button type="button" className="icon-btn" aria-label="Copy command" onClick={() => void copy(command)}>
+          <button type="button" className="icon-btn" aria-label="Copy command" onClick={() => void copyText(command)}>
             <CopyIcon size={16} />
           </button>
         </div>
       </Group>
-      <p className="muted small">The agent must be able to reach this computer, so it works from machines on your home network. Everything an agent does shows up in Recent activity.</p>
+      <p className="muted small">
+        The agent has to run on a machine that can reach one of these addresses. An assistant hosted in the cloud connects from its provider’s servers, which are not on your home network or tailnet, so it cannot reach them. Everything
+        an agent does shows up in Recent activity.
+      </p>
     </section>
   );
 }

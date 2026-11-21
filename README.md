@@ -117,13 +117,15 @@ Each request is a call to Claude (`claude-opus-5-5`) billed to your Anthropic ac
 
 ## AI agents
 
-Afterglow serves MCP at `http://<host>:4680/mcp`. For Claude Code:
+Afterglow serves MCP at `/mcp` on every address it can be opened at: `http://localhost:4680/mcp` on the same computer, the home-network address from another machine at home, and the Tailscale address from any device on your tailnet. Settings → AI agents lists them with copy buttons. For Claude Code on the same computer:
 
 ```bash
 claude mcp add --transport http afterglow http://localhost:4680/mcp
 ```
 
 With a passphrase, add `--header "Authorization: Bearer <passphrase>"`. Clients that only speak stdio (such as Claude Desktop's config file) can bridge with `npx mcp-remote http://localhost:4680/mcp`.
+
+The agent has to run somewhere that can reach the address you give it. Claude Code or Claude Desktop on a laptop that is signed in to your tailnet can use the Tailscale address. An assistant hosted in the cloud connects from its provider's servers rather than from your device, so a home-network or tailnet address is out of its reach.
 
 Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_scene`, `list_looks`, `save_look`, `apply_look`, `delete_look`, `list_schedules`, `save_schedule`, `set_schedule_enabled`, `delete_schedule`. Agents refer to lights and zones by name. Everything an agent does appears under Settings → Recent activity.
 

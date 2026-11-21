@@ -96,7 +96,7 @@ async function main() {
   app.listen(config.port, config.host, () => {
     console.log(`Afterglow ${config.version} is running${config.demo ? ' in demo mode (simulated lights)' : ''}`);
     for (const a of addresses) console.log(`  ${`${a.label}:`.padEnd(26)}${a.url}`);
-    console.log(`  ${'MCP endpoint:'.padEnd(26)}http://localhost:${config.port}/mcp`);
+    console.log(`  ${'MCP endpoint:'.padEnd(26)}add /mcp to any address above`);
     if (!config.demo && !hub.connected) console.log(`  ${'Govee problem:'.padEnd(26)}${hub.error}`);
     if (lan?.error) console.log(`  ${'Local control:'.padEnd(26)}unavailable (${lan.error}); using Govee's cloud for everything`);
   });
