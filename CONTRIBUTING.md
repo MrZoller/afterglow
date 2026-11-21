@@ -27,12 +27,31 @@ npm test
 ```
 
 ```bash
-npm run build
+npm run test:e2e
 ```
 
-All three must pass. The tests take about a minute because several of them wait on real timers.
+All three must pass. `npm test` runs the server tests and takes about a minute, because several of them wait on real timers. `npm run test:e2e` builds the app and runs the browser tests; the first time, install the browser it uses:
 
-There are no browser tests in the repository. After changing anything in `web/`, open the app and check the screens you touched at phone width (about 390 px) and desktop width, with content in them, not just in their empty state. Two styling bugs so far only showed up once a screen had real content.
+```bash
+npx playwright install chromium
+```
+
+CI runs the same checks on every push to `main` and on pull requests.
+
+## Browser tests
+
+The tests in `e2e/` drive the real page in a real browser. Each test starts its own copy of the built app in demo mode on a free port, with its own temporary data folder, so tests are independent and run side by side. That copy ignores any `.env` in the project, so a test run cannot reach real lights, real data or real backups.
+
+- `e2e/fixtures.ts` provides `app`, a small client for checking what the server ended up with (`app.snapshot()`, `app.light(name)`, `app.colors(name)`), and helpers for navigating and dragging.
+- Check outcomes through `app` as well as on the page: a control that looks right but sent nothing is the failure these tests exist to catch.
+- Wait for things with `expect.poll` or a web-first `expect`, not a fixed pause.
+- Tests that wait on real time, such as a schedule ending, are tagged `@slow` in their title and only run with:
+
+```bash
+npm run test:e2e:all
+```
+
+- `e2e/layout.spec.ts` fills the app with content and checks sizes at phone and desktop width. Two styling bugs so far only showed up once a screen had real content, so when you add a list or a label, make sure that test puts something in it.
 
 ## How the code is laid out
 
@@ -50,7 +69,8 @@ There are no browser tests in the repository. After changing anything in `web/`,
 | `server/http.ts`, `mcp.ts` | The REST API and the MCP tools |
 | `web/src/views/` | One file per screen |
 | `web/src/help.ts` | The text of the Help page |
-| `test/` | Tests, run with Node's built-in test runner |
+| `test/` | Server tests, run with Node's built-in test runner |
+| `e2e/` | Browser tests, run with Playwright |
 
 ## Rules the code relies on
 

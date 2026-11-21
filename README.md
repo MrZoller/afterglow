@@ -159,6 +159,14 @@ Runs the server with reload and the web app at <http://localhost:5173>.
 npm test
 ```
 
+Server tests, about a minute.
+
+```bash
+npm run test:e2e
+```
+
+Browser tests against the app in demo mode. The first time, run `npx playwright install chromium`. See [CONTRIBUTING.md](CONTRIBUTING.md) for more.
+
 | Path | What it holds |
 | --- | --- |
 | `server/govee/cloud.ts` | Client for Govee's cloud API |
@@ -173,3 +181,8 @@ npm test
 | `server/ai.ts` | Look ideas from a description, via the Claude API |
 | `shared/` | Types, colour maths and look patterns used by both sides |
 | `web/src/` | The React app |
+| `e2e/` | Browser tests |
+
+## Licence
+
+[MIT](LICENSE).

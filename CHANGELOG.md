@@ -4,7 +4,11 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Browser tests (`e2e/`) covering the main flows on every screen, run against the app in demo mode.
+- Continuous integration on GitHub: type-check, build, server tests and browser tests on every push to `main` and on pull requests.
+- MIT licence.
 
 ## 0.1.0 — 2026-11-21
 

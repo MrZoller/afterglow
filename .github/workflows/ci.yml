@@ -1,0 +1,59 @@
+name: CI
+
+# Runs on every push to main and on pull requests: type-check, build, unit tests,
+# then the browser tests against the built app in demo mode. No real lights, keys or
+# network devices are involved.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Includes the type-check.
+      - run: npm run build
+      - run: npm test
+
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      # E2E_SLOW includes the tests that wait on real time, such as a schedule ending.
+      - run: npx playwright test
+        env:
+          E2E_SLOW: '1'
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-test-results
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

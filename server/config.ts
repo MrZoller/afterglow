@@ -4,10 +4,13 @@ import { fileURLToPath } from 'node:url';
 /** Project root: one level above both `server/` (dev) and `dist/` (built). */
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-try {
-  process.loadEnvFile(path.join(root, '.env'));
-} catch {
-  // No .env file: fall back to the process environment and demo mode.
+// The browser tests set this so a test run can never pick up a real Govee key or data folder.
+if (!process.env.AFTERGLOW_NO_ENV_FILE) {
+  try {
+    process.loadEnvFile(path.join(root, '.env'));
+  } catch {
+    // No .env file: fall back to the process environment and demo mode.
+  }
 }
 
 const env = (name: string) => process.env[name]?.trim() ?? '';

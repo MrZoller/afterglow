@@ -7,7 +7,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for the layout and the rules the code re
 ## Commands
 
 - `npm run dev`: server with reload plus the web app on port 5173
-- `npm run typecheck`, `npm test`, `npm run build`: all three must pass before committing
+- `npm run typecheck`, `npm test`, `npm run test:e2e`: all three must pass before committing (`test:e2e` builds first)
+- `npm run test:e2e:all`: also runs the browser tests tagged `@slow`, which wait minutes of real time
 - `npm start`: run the built app on port 4680
 
 With no `GOVEE_API_KEY` the app runs in demo mode against `server/govee/fake.ts`: eight simulated lights, the four ropes also on a simulated local network. Use `DATA_DIR=<temp folder>` so a test run does not touch real data.
@@ -15,8 +16,9 @@ With no `GOVEE_API_KEY` the app runs in demo mode against `server/govee/fake.ts`
 ## Checking changes
 
 - Server behaviour is covered by `test/`. Tests run the real clients against the simulators; add to the simulators rather than mocking.
-- The repository has no browser tests. For any change under `web/`, build, start the server in demo mode with a temporary `DATA_DIR`, and drive the page in a real browser at 390 px and 1280 px wide: click through the flow you changed and confirm the result through `/api/snapshot`. Look at screens with content in them, not only empty ones.
-- Things that take real time (a moving look's next step, a schedule ending, a turn-off check) need a real-time run; the unit tests cover them with injected clocks.
+- Browser behaviour is covered by `e2e/` (Playwright). Each test starts its own demo server; see "Browser tests" in CONTRIBUTING.md. For any change under `web/`, add or extend a test there and confirm the result through `app.snapshot()` as well as on the page. Look at screens with content in them, not only empty ones; `e2e/layout.spec.ts` exists for that.
+- In a cloud session the browser is preinstalled and matches the pinned `@playwright/test` version. Do not run `playwright install` there, and do not change the pinned version without checking the installed browser still matches.
+- Things that take real time (a cloud step of a moving look, a schedule ending, a turn-off check) are covered twice: by unit tests with injected clocks, and by `@slow` browser tests in real time.
 
 ## Things that have gone wrong before
 
