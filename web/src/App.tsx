@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Look } from '../../shared/types';
 import { Toasts } from './components/ui';
-import { BulbIcon, ClockIcon, GearIcon, PaletteIcon } from './icons';
+import { BulbIcon, ClockIcon, GearIcon, HelpIcon, PaletteIcon } from './icons';
 import { login, start, useApp } from './store';
+import { HelpView } from './views/Help';
 import { LightsView } from './views/Lights';
 import { LookEditor, LooksView } from './views/Looks';
 import { ControlPanel } from './views/Panel';
 import { SchedulesView } from './views/Schedules';
 import { SettingsView, ZoneEditor } from './views/Settings';
 
-type Tab = 'lights' | 'looks' | 'schedules' | 'settings';
+type Tab = 'lights' | 'looks' | 'schedules' | 'settings' | 'help';
 
 const TABS: { id: Tab; label: string; icon: typeof BulbIcon }[] = [
   { id: 'lights', label: 'Lights', icon: BulbIcon },
   { id: 'looks', label: 'Looks', icon: PaletteIcon },
   { id: 'schedules', label: 'Schedules', icon: ClockIcon },
   { id: 'settings', label: 'Settings', icon: GearIcon },
+  { id: 'help', label: 'Help', icon: HelpIcon },
 ];
 
 const tabFromHash = (): Tab => TABS.find((t) => `#/${t.id}` === window.location.hash)?.id ?? 'lights';
@@ -101,6 +103,7 @@ export function App() {
         {tab === 'looks' && <LooksView edit={(look, assist) => setLookEdit({ look, tryOn: 'all', assist })} />}
         {tab === 'schedules' && <SchedulesView />}
         {tab === 'settings' && <SettingsView editZone={setZoneEdit} />}
+        {tab === 'help' && <HelpView />}
       </main>
 
       {panel && <ControlPanel target={panel} onClose={closePanel} editLook={(look, tryOn) => setLookEdit({ look, tryOn })} editZone={setZoneEdit} />}

@@ -13,6 +13,8 @@ A friendly control panel for Govee outdoor lights. It runs on a computer at home
 
 Without an API key it runs in **demo mode** with eight simulated lights, so you can try it first.
 
+The app has a built-in **Help** page: searchable answers on every feature, troubleshooting, and a list of anything this install still needs set up.
+
 ## Set up
 
 You need [Node.js](https://nodejs.org) 22 or newer (`brew install node` on a Mac).

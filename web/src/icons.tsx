@@ -97,3 +97,9 @@ export const AlertIcon = icon(
 );
 export const ArrowUpIcon = icon(<path d="M12 19V5M6 11l6-6 6 6" />);
 export const ArrowDownIcon = icon(<path d="M12 5v14M6 13l6 6 6-6" />);
+export const HelpIcon = icon(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.500 9.500a2.500 2.500 0 1 1 3.800 2.100c-.800.500-1.300 1-1.300 1.900M12 17v.500" />
+  </>,
+);
