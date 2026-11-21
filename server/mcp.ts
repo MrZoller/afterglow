@@ -128,6 +128,7 @@ function build(services: Services): McpServer {
           on: d.state.power,
           brightness: d.state.brightness,
           showing: showing(d),
+          moving: d.moving || undefined,
           segments: d.caps.segments,
           online: d.state.online,
           problem: d.error ?? undefined,
@@ -204,23 +205,25 @@ function build(services: Services): McpServer {
     'list_looks',
     'Lists saved looks: reusable colour designs made in this app (a palette plus a pattern).',
     {},
-    () => ok(snap().looks.map((l) => ({ id: l.id, name: l.name, colors: l.colors.map(toHex), pattern: l.pattern, brightness: l.brightness }))),
+    () => ok(snap().looks.map((l) => ({ id: l.id, name: l.name, colors: l.colors.map(toHex), pattern: l.pattern, brightness: l.brightness, motion_minutes: l.motion?.loopMinutes }))),
     true,
   );
 
   tool(
     'save_look',
-    'Creates a look, or updates one when id is given. Patterns: "gradient" blends the colours along each light; "blocks" splits each light into equal bands; "alternate" repeats the colours segment by segment; "perLight" gives each light the next colour in the palette; "solid" uses the first colour everywhere.',
+    'Creates a look, or updates one when id is given. Patterns: "gradient" blends the colours along each light; "blocks" splits each light into equal bands; "alternate" repeats the colours segment by segment; "perLight" gives each light the next colour in the palette; "solid" uses the first colour everywhere. Set motion_minutes to make the colours move slowly through the palette, one full loop in that many minutes: with "solid" the lights change colour together, with "perLight" colours travel from light to light, otherwise they flow along each light. Only slow movement is possible (20 to 120 minutes suits most looks); it runs until something else is applied or the lights are switched off.',
     {
       id: z.string().optional().describe('Id of an existing look to replace'),
       name: z.string(),
       colors: z.array(z.string()).min(1).max(8).describe('Hex colours'),
       pattern: z.enum(['gradient', 'blocks', 'alternate', 'perLight', 'solid']),
       brightness: z.number().int().min(1).max(100).optional().describe('Brightness to set when the look is applied; omit to leave brightness alone'),
+      motion_minutes: z.number().int().min(2).max(720).optional().describe('Minutes for one slow loop through the palette; omit for a still look'),
     },
     (a) => {
-      const look = ops.saveLook({ name: a.name, colors: a.colors.map(hex), pattern: a.pattern, brightness: a.brightness ?? null }, a.id);
-      return ok(`Saved look "${look.name}" (id ${look.id}).`);
+      const motion = a.motion_minutes ? { loopMinutes: a.motion_minutes } : null;
+      const look = ops.saveLook({ name: a.name, colors: a.colors.map(hex), pattern: a.pattern, brightness: a.brightness ?? null, motion }, a.id);
+      return ok(`Saved look "${look.name}" (id ${look.id})${motion ? `, moving through its colours every ${motion.loopMinutes} minutes` : ''}.`);
     },
   );
 

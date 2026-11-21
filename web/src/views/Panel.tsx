@@ -68,6 +68,14 @@ export function ControlPanel({ target, onClose, editLook, editZone }: { target: 
     >
       <div className="panel">
         <Slider label="Brightness" value={brightness} disabled={devices.length === 0} onCommit={(value) => void control([target], { type: 'brightness', value })} />
+        {devices.some((d) => d.moving) && (
+          <div className="notice row">
+            <span>The colours are slowly moving.</span>
+            <button type="button" className="btn sm" onClick={() => void control([target], { type: 'still' })}>
+              Hold here
+            </button>
+          </div>
+        )}
         <Segmented label="Controls" value={tab} options={TABS} onChange={setTab} />
 
         {tab === 'looks' && <LooksTab target={target} devices={devices} editLook={editLook} />}

@@ -359,6 +359,14 @@ code {
   justify-items: start;
 }
 
+.notice.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
 .empty {
   text-align: center;
   padding: 44px 20px;

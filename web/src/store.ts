@@ -140,7 +140,8 @@ function optimistic(targets: string[], action: Action) {
 export async function control(targets: string[], action: Action): Promise<void> {
   optimistic(targets, action);
   const summary = await attempt(api<ApplySummary>('POST', '/control', { targets, action }));
-  if (!summary?.skipped.length) return;
+  // Holding a moving look only concerns the lights that were moving.
+  if (!summary?.skipped.length || action.type === 'still') return;
   const reasons = [...new Set(summary.skipped.map((s) => s.reason))].join(', ');
   toast(
     summary.applied.length

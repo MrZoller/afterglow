@@ -57,6 +57,8 @@ export interface Device {
   kind: DeviceKind;
   caps: DeviceCaps;
   state: DeviceState;
+  /** True while a moving look is slowly changing this light's colours. */
+  moving: boolean;
   /** Commands waiting to be sent. */
   pending: number;
   error: string | null;
@@ -79,8 +81,14 @@ export interface Look {
   /** For the `custom` pattern: hand-painted colours, resampled to each light's segment count. */
   segments?: RGB[];
   brightness: number | null;
+  /** When set, the colours slowly move through the palette, one full trip per `loopMinutes`. */
+  motion?: Motion | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface Motion {
+  loopMinutes: number;
 }
 
 export type Action =
@@ -92,7 +100,9 @@ export type Action =
   | { type: 'scene'; scene: SceneRef }
   | { type: 'look'; lookId: string }
   /** A look that has not been saved, used to try a design while editing it. */
-  | { type: 'palette'; colors: RGB[]; pattern: LookPattern; segments?: RGB[]; brightness: number | null }
+  | { type: 'palette'; colors: RGB[]; pattern: LookPattern; segments?: RGB[]; brightness: number | null; motion?: Motion | null }
+  /** Stops a moving look where it is, keeping the colours currently showing. */
+  | { type: 'still' }
   | { type: 'toggle'; instance: string; on: boolean };
 
 /** A look proposed by the assistant, not yet saved. */
@@ -102,6 +112,7 @@ export interface LookIdea {
   pattern: LookPattern;
   segments?: RGB[];
   brightness: number | null;
+  motion?: Motion | null;
   note: string;
 }
 

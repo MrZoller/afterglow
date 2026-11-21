@@ -61,6 +61,39 @@ export function sampleGradient(stops: RGB[], t: number): RGB {
   return mix(stops[i], stops[i + 1], pos - i);
 }
 
+const smooth = (x: number) => {
+  const t = Math.max(0, Math.min(1, x));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Blend for colours that change over time. Vivid colours travel around the colour
+ * wheel so they stay vivid on the way (red to green passes through yellow, not brown);
+ * pale ones such as warm and cool white simply cross-fade.
+ */
+export function blend(a: RGB, b: RGB, t: number): RGB {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const ha = rgbToHsv(a);
+  const hb = rgbToHsv(b);
+  const vivid = smooth((Math.min(ha.s, hb.s) - 0.25) / 0.35);
+  const plain = mix(a, b, t);
+  if (vivid <= 0) return plain;
+  const turn = ((hb.h - ha.h + 540) % 360) - 180; // shortest way round the wheel
+  const wheel = hsvToRgb(ha.h + turn * t, ha.s + (hb.s - ha.s) * t, ha.v + (hb.v - ha.v) * t);
+  return vivid >= 1 ? wheel : mix(plain, wheel, vivid);
+}
+
+/** Samples a palette as a closed loop: 0 is the first colour and 1 comes back round to it. */
+export function sampleLoop(stops: RGB[], t: number): RGB {
+  const n = stops.length;
+  if (n === 0) return 0xffffff;
+  if (n === 1) return stops[0];
+  const pos = (((t % 1) + 1) % 1) * n;
+  const i = Math.floor(pos) % n;
+  return blend(stops[i], stops[(i + 1) % n], pos - Math.floor(pos));
+}
+
 /** Approximate on-screen colour of a white at the given temperature. */
 export function kelvinToRgb(kelvin: number): RGB {
   const t = Math.max(1000, Math.min(40000, kelvin)) / 100;

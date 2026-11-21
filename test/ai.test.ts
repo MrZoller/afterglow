@@ -36,9 +36,9 @@ const message = (text: string, extra: object = {}) => ({
 
 const goodReply = {
   ideas: [
-    { name: 'Harvest', colors: ['#ff7a00', '#ffb000', '#c8ff3d'], pattern: 'gradient', segments: null, brightness: 60, note: 'Warm amber fading to gold.' },
-    { name: 'Ends', colors: ['#ff0000', '#ffb46b'], pattern: 'custom', segments: ['#ff0000', '#ffb46b', '#ffb46b', '#ffb46b', '#ffb46b', '#ff0000'], brightness: null, note: 'Red tips on warm white.' },
-    { name: 'Trio', colors: ['#ff0000', '#00ff00', '#0000ff'], pattern: 'perLight', segments: null, brightness: 250, note: 'One colour per light.' },
+    { name: 'Harvest', colors: ['#ff7a00', '#ffb000', '#c8ff3d'], pattern: 'gradient', segments: null, brightness: 60, loop_minutes: 45, note: 'Warm amber fading to gold.' },
+    { name: 'Ends', colors: ['#ff0000', '#ffb46b'], pattern: 'custom', segments: ['#ff0000', '#ffb46b', '#ffb46b', '#ffb46b', '#ffb46b', '#ff0000'], brightness: null, loop_minutes: null, note: 'Red tips on warm white.' },
+    { name: 'Trio', colors: ['#ff0000', '#00ff00', '#0000ff'], pattern: 'perLight', segments: null, brightness: 250, loop_minutes: 5000, note: 'One colour per light.' },
   ],
   scenes: ['sunset', 'Not A Scene', 'Candlelight'],
 };
@@ -102,6 +102,8 @@ describe('look suggestions', () => {
       ],
     );
     assert.deepEqual(result.ideas[0].colors, [0xff7a00, 0xffb000, 0xc8ff3d]);
+    // Movement is carried through, kept within bounds, and left off when not asked for.
+    assert.deepEqual(result.ideas.map((i) => i.motion?.loopMinutes), [45, undefined, 720]);
     assert.equal(result.ideas[0].segments, undefined);
     assert.deepEqual(result.ideas[1].segments, [0xff0000, 0xffb46b, 0xffb46b, 0xffb46b, 0xffb46b, 0xff0000]);
     assert.deepEqual(result.sceneNames, ['Sunset', 'Candlelight']);
@@ -113,10 +115,10 @@ describe('look suggestions', () => {
     const { ideas } = tidy(
       {
         ideas: [
-          { name: ' No paint ', colors: ['#ff0000', 'nonsense', '#00ff00'], pattern: 'custom', segments: null, brightness: null, note: 'x' },
-          { name: 'Too many', colors: [], pattern: 'custom', segments: many, brightness: 0, note: 'x' },
-          { name: 'Empty', colors: ['red', 'blue'], pattern: 'solid', segments: null, brightness: null, note: 'x' },
-          { name: '', colors: ['#ABC'], pattern: 'solid', segments: ['#ff0000'], brightness: null, note: 'x' },
+          { name: ' No paint ', colors: ['#ff0000', 'nonsense', '#00ff00'], pattern: 'custom', segments: null, brightness: null, loop_minutes: null, note: 'x' },
+          { name: 'Too many', colors: [], pattern: 'custom', segments: many, brightness: 0, loop_minutes: null, note: 'x' },
+          { name: 'Empty', colors: ['red', 'blue'], pattern: 'solid', segments: null, brightness: null, loop_minutes: null, note: 'x' },
+          { name: '', colors: ['#ABC'], pattern: 'solid', segments: ['#ff0000'], brightness: null, loop_minutes: 30, note: 'x' },
         ],
         scenes: [],
       },

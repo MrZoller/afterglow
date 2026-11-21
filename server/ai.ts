@@ -22,6 +22,7 @@ const Reply = z.object({
       pattern: z.enum(['gradient', 'blocks', 'alternate', 'perLight', 'solid', 'custom']),
       segments: z.array(z.string()).nullable().describe('Only for the custom pattern: 6 to 20 hex colours in order along one light. Null otherwise.'),
       brightness: z.number().nullable().describe('1 to 100, or null to leave brightness as it is'),
+      loop_minutes: z.number().nullable().describe('For a slowly moving look: minutes for one full loop through the palette, 10 to 240. Null for a still look.'),
       note: z.string().describe('One short sentence on how it will look'),
     }),
   ),
@@ -44,14 +45,16 @@ What matters when choosing colours:
 - Each distinct colour on a light is sent as a separate command, so a painted design should use eight distinct colours or fewer.
 - Set "brightness" only when the mood calls for it (dim for cosy, bright for a party); otherwise null leaves the lights as they are.
 
-Looks are static. When the person asks for motion (flicker, chase, twinkle), give static looks that capture the palette, and put matching built-in animated scenes in "scenes". Only use scene names from the list in the message, copied exactly.
+A look can be still or slowly moving. With "loop_minutes" set, the palette slowly rotates through the pattern, one full loop in that many minutes (10 to 240): on solid the lights drift together from one colour to the next, on perLight the colours travel from light to light, and on the other patterns they flow along each light. The palette is a closed loop, so the last colour blends back into the first; choose colours that sit well next to each other in that order. This is gentle change over minutes. Use it when the person asks for colours that shift, drift or change slowly, and leave it null otherwise.
+
+Fast motion (flicker, chase, twinkle) is not possible in a look. When the person asks for that, give looks that capture the palette, and put matching built-in animated scenes in "scenes". Only use scene names from the list in the message, copied exactly.
 
 Give three ideas that differ meaningfully from one another in palette, pattern or mood. When the message includes the look being edited and the request reads as an adjustment to it, keep everything the person did not ask to change.`;
 
 export interface SuggestInput {
   prompt: string;
   /** The design being edited, when the request may be a refinement of it. */
-  current?: Pick<Look, 'name' | 'colors' | 'pattern' | 'brightness'> | null;
+  current?: Pick<Look, 'name' | 'colors' | 'pattern' | 'brightness' | 'motion'> | null;
   lightCount: number;
   segmentCounts: number[];
   /** Built-in animated scenes the lights offer. */
@@ -63,7 +66,7 @@ function userMessage(input: SuggestInput): string {
   if (input.current) {
     const c = input.current;
     parts.push(
-      `Look being edited: ${JSON.stringify({ name: c.name || undefined, colors: c.colors.map(toHex), pattern: c.pattern, brightness: c.brightness })}`,
+      `Look being edited: ${JSON.stringify({ name: c.name || undefined, colors: c.colors.map(toHex), pattern: c.pattern, brightness: c.brightness, loop_minutes: c.motion?.loopMinutes ?? null })}`,
     );
   }
   const segments = input.segmentCounts.length ? `, with ${input.segmentCounts.join(' and ')} segments each` : '';
@@ -102,12 +105,15 @@ export function tidy(reply: z.infer<typeof Reply>, sceneNames: string[]): { idea
     if (colors.length === 0) continue;
 
     const brightness = typeof idea.brightness === 'number' && Number.isFinite(idea.brightness) ? Math.max(1, Math.min(100, Math.round(idea.brightness))) : null;
+    // Movement needs at least two colours to move between.
+    const loop = typeof idea.loop_minutes === 'number' && Number.isFinite(idea.loop_minutes) && colors.length > 1 ? Math.max(5, Math.min(720, Math.round(idea.loop_minutes))) : null;
     ideas.push({
       name: idea.name.trim().slice(0, 60) || 'Untitled',
       colors,
       pattern,
       ...(pattern === 'custom' ? { segments } : {}),
       brightness,
+      ...(loop ? { motion: { loopMinutes: loop } } : {}),
       note: idea.note.trim().slice(0, 200),
     });
   }

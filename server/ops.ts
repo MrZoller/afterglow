@@ -8,6 +8,7 @@ import type { Store } from './store';
 const rgb = z.number().int().min(0).max(0xffffff);
 const name = z.string().trim().min(1).max(60);
 const targets = z.array(z.string().min(1)).min(1);
+const motion = z.object({ loopMinutes: z.number().int().min(2).max(720) }).nullable().optional();
 
 export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('power'), on: z.boolean() }),
@@ -23,7 +24,9 @@ export const actionSchema = z.discriminatedUnion('type', [
     pattern: z.enum(['solid', 'perLight', 'gradient', 'blocks', 'alternate', 'custom']),
     segments: z.array(rgb).min(1).max(200).optional(),
     brightness: z.number().int().min(1).max(100).nullable().default(null),
+    motion,
   }),
+  z.object({ type: z.literal('still') }),
   z.object({ type: z.literal('toggle'), instance: z.string().min(1), on: z.boolean() }),
 ]);
 
@@ -35,6 +38,7 @@ export const lookSchema = z.object({
   pattern: z.enum(['solid', 'perLight', 'gradient', 'blocks', 'alternate', 'custom']),
   segments: z.array(rgb).min(1).max(200).optional(),
   brightness: z.number().int().min(1).max(100).nullable().default(null),
+  motion,
 });
 
 const timeSpec = z.discriminatedUnion('type', [
@@ -62,6 +66,7 @@ export const suggestSchema = z.object({
       colors: z.array(rgb).min(1).max(8),
       pattern: z.enum(['solid', 'perLight', 'gradient', 'blocks', 'alternate', 'custom']),
       brightness: z.number().int().min(1).max(100).nullable().default(null),
+      motion,
     })
     .nullable()
     .optional(),
@@ -99,6 +104,7 @@ export class Ops {
     if (id) {
       look = Object.assign(this.find(this.store.data.looks, id, 'Look'), data, { updatedAt: now });
       if (data.pattern !== 'custom') delete look.segments;
+      if (!data.motion) delete look.motion;
     } else {
       look = { id: crypto.randomUUID(), ...data, createdAt: now, updatedAt: now };
       this.store.data.looks.push(look);

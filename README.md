@@ -5,6 +5,7 @@ A friendly control panel for Govee outdoor lights. It runs on a computer at home
 - **One page for everything**, on phone and desktop: on/off, brightness, colour, white, per-segment painting.
 - **Govee scenes**: built-in scenes, plus the DIY scenes and snapshots you made in the Govee app.
 - **Looks**: your own colour designs (a palette plus a pattern), built from a colour picker or a photo.
+- **Slow movement**: any look can drift through its colours over minutes or hours, with no fast effects.
 - **Describe a look** (optional): type what you want, such as "cosy autumn evening", and get designs to preview, adjust and save.
 - **Zones**: named groups of lights such as "Front yard".
 - **Schedules**: clock or sunrise/sunset times with offsets, days of the week, an optional turn-off time, and yearly date ranges for seasonal lighting.
@@ -57,6 +58,16 @@ To use it away from home, put the Mac and your phone on a private network such a
 
 Anyone on your network can open the page. To require a passphrase, set `ACCESS_TOKEN=` in `.env` and restart. The same value protects the API and the MCP endpoint.
 
+## Slow movement
+
+Turn on **Movement** in the look editor and choose how long one full loop through the palette takes, from ten minutes to four hours. What moves depends on the pattern:
+
+- **Solid**: all the lights change colour together.
+- **One per light**: each light takes on its neighbour's colour, so colours travel from light to light.
+- **Gradient, Blocks, Alternating, Painted**: colours flow along each light.
+
+Solid and One per light cost one request per light per step, so they move in the smallest steps. The editor's preview plays the loop in a few seconds and tells you how often the lights will really update. A moving look works anywhere a look does, including schedules: "sunset to 11 PM, Drifting aurora" starts moving at sunset and stops when the lights turn off.
+
 ## Describe a look
 
 With an Anthropic API key, the look editor gains a box where you describe what you want. It returns three designs; pick one to load it into the editor, then adjust, try it on the lights and save it like any other look. Follow-up requests such as "warmer, less purple" refine the look you are editing. Because looks are still, it also points out built-in animated Govee scenes that fit the description.
@@ -83,7 +94,7 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 
 - **Govee limits requests.** Each change to a light is one request, and a design with several colours is one request per colour, per light. Afterglow paces commands, retries when Govee asks it to slow down, and draws gradients in at most eight bands. Settings shows how many requests were sent today.
 - **Some state is remembered, not read.** Govee reports power, brightness and a single colour, but not segment colours or the running scene. Afterglow shows what it last applied, and falls back to what Govee reports when it sees the colour change from elsewhere.
-- **Animated effects come from Govee scenes.** Looks are static designs; the API is too slow to animate segments from outside.
+- **Movement is slow by design.** A moving look takes a small step every minute or so, never more than about 75 requests per light per hour, and pauses for the day if the account gets close to Govee's daily limit. It keeps going until you apply something else, hold it, or switch the lights off, and it carries on after a restart. Fast effects such as chases and flicker come from Govee's own scenes, because the API cannot send colours quickly enough.
 - **DIY scenes and snapshots** are created in the Govee app. Use the reload button on the Scenes tab to pick up new ones.
 - **Overlapping schedules**: when two start at the same minute, one limited to a time of year wins over an everyday one.
 - **Your data** is one readable file, `data/afterglow.json`. Copy it to back up looks, zones and schedules.
@@ -107,6 +118,7 @@ npm test
 | `server/hub.ts` | Lights, their state, and turning actions into commands |
 | `server/queue.ts` | Per-light command pacing and retries |
 | `server/scheduler.ts` | Schedule times, including sunrise and sunset |
+| `server/animator.ts` | Advances moving looks step by step |
 | `server/mcp.ts` | MCP tools |
 | `server/ai.ts` | Look ideas from a description, via the Claude API |
 | `shared/` | Types, colour maths and look patterns used by both sides |

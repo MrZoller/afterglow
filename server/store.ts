@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { STARTER_LOOKS } from '../shared/looks';
 import type { ActivityEntry, DeviceState, Group, Look, Schedule, Settings } from '../shared/types';
+import type { StoredAnimation } from './animator';
 import type { DeviceInfo, SceneOption } from './govee/cloud';
 
 export interface StoredDevice {
@@ -21,7 +22,14 @@ interface Data {
   /** Scene lists per model, cached because each fetch costs a request. */
   scenes: Record<string, { at: number; options: SceneOption[] }>;
   usage: { day: string; count: number };
+  /** Moving looks currently running, kept so they carry on after a restart. */
+  animations: StoredAnimation[];
+  /** Starter looks already added, so new ones can be offered once and deleted ones stay deleted. */
+  seeded: string[];
 }
+
+/** Starters that shipped before the `seeded` list existed. */
+const FIRST_STARTERS = ['warm', 'sunset', 'ocean', 'forest', 'ember', 'aurora', 'holiday', 'spooky', 'liberty', 'moon'].map((n) => `starter-${n}`);
 
 const empty = (): Data => ({
   version: 1,
@@ -33,6 +41,8 @@ const empty = (): Data => ({
   activity: [],
   scenes: {},
   usage: { day: '', count: 0 },
+  animations: [],
+  seeded: STARTER_LOOKS.map((look) => look.id),
 });
 
 const MAX_ACTIVITY = 200;
@@ -52,7 +62,15 @@ export class Store {
   private load(): Data {
     if (!fs.existsSync(this.file)) return empty();
     try {
-      return { ...empty(), ...JSON.parse(fs.readFileSync(this.file, 'utf8')) };
+      const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      const data: Data = { ...empty(), ...saved, seeded: saved.seeded ?? FIRST_STARTERS };
+      // Offer starter looks added in a newer version, once.
+      for (const look of STARTER_LOOKS) {
+        if (data.seeded.includes(look.id)) continue;
+        data.seeded.push(look.id);
+        if (!data.looks.some((l) => l.id === look.id)) data.looks.push({ ...look, createdAt: Date.now(), updatedAt: Date.now() });
+      }
+      return data;
     } catch (err) {
       // Keep the unreadable file for recovery rather than overwriting it.
       const backup = `${this.file}.corrupt-${Date.now()}`;

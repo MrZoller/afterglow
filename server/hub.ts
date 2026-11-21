@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { kelvinToRgb, resample, toHex } from '../shared/color';
-import { groupByColor, renderLook } from '../shared/looks';
+import { canMove, groupByColor, renderLook } from '../shared/looks';
 import type { Action, ApplySummary, Device, DeviceKind, DeviceState, Look, RGB, SceneChoice, Source } from '../shared/types';
+import { Animator } from './animator';
 import { GoveeError, type CloudState, type Command, type DeviceInfo, type GoveeCloud, type SceneOption } from './govee/cloud';
 import { CommandQueue } from './queue';
 import type { Store } from './store';
@@ -58,6 +59,9 @@ export class Hub extends EventEmitter {
   connected = false;
   error: string | null = null;
 
+  /** Moving looks in progress. */
+  readonly animator: Animator;
+
   private entries = new Map<string, Entry>();
   private queue: CommandQueue;
   private sceneFetches = new Map<string, Promise<SceneOption[]>>();
@@ -70,6 +74,17 @@ export class Hub extends EventEmitter {
     super();
     this.queue = new CommandQueue({ burst: 5, perSecond: 1, maxAttempts: 4, onChange: () => this.emit('devices') });
     for (const d of store.data.devices) this.entries.set(d.info.id, { ...d, error: null });
+    this.animator = new Animator(store, {
+      segments: (id) => this.entries.get(id)?.info.caps.segments ?? null,
+      paint: (id, colors) => this.paintFrame(id, colors),
+      // Leave headroom under the daily limit for ordinary use and schedules.
+      overBudget: () => store.requestsToday() >= (cloud.limits.dailyLimit ?? 10_000) * 0.85,
+      note: (text) => {
+        store.log({ source: 'schedule', ok: false, text });
+        this.emit('activity');
+      },
+      changed: () => this.emit('devices'),
+    });
   }
 
   async start(): Promise<void> {
@@ -84,6 +99,7 @@ export class Hub extends EventEmitter {
     };
     await attempt(30_000);
     setInterval(() => void this.refresh(), 10 * 60_000).unref();
+    this.animator.start();
   }
 
   list(): Device[] {
@@ -99,6 +115,7 @@ export class Hub extends EventEmitter {
       kind: KINDS[e.info.sku] ?? 'light',
       caps: e.info.caps,
       state: e.state,
+      moving: this.animator.has(e.info.id),
       pending: this.queue.pending(e.info.id),
       error: e.error,
     };
@@ -169,6 +186,8 @@ export class Hub extends EventEmitter {
     const st = e.state;
     if (cloud.online !== null) st.online = cloud.online;
     if (cloud.power !== null) st.power = cloud.power;
+    // Switched off somewhere else: stop sending it colours.
+    if (cloud.power === false) this.animator.release([e.info.id]);
     if (cloud.brightness !== null) st.brightness = cloud.brightness;
     // Govee does not report segments or scenes, so what we last applied stays on screen
     // unless the colour it does report has changed, meaning someone used another app.
@@ -242,6 +261,8 @@ export class Hub extends EventEmitter {
         return `look "${this.store.data.looks.find((l) => l.id === action.lookId)?.name ?? 'deleted look'}"`;
       case 'palette':
         return 'custom colours';
+      case 'still':
+        return 'held the current colours';
       case 'toggle':
         return `${action.instance} ${action.on ? 'on' : 'off'}`;
     }
@@ -373,6 +394,10 @@ export class Hub extends EventEmitter {
         };
       }
 
+      case 'still':
+        if (!this.animator.has(e.info.id)) return { skip: 'not moving' };
+        return { cmds: [], patch: () => undefined };
+
       case 'scene': {
         const options = await this.sceneOptions(e);
         const match = options.find((o) => sceneKey(o) === sceneKey(action.scene));
@@ -464,6 +489,13 @@ export class Hub extends EventEmitter {
       }
     });
 
+    // A moving look takes over the lights it was applied to; anything else that changes
+    // how a light looks, or switches it off, ends the movement there.
+    const applied = entries.flatMap((e, index) => ('skip' in plans[index] ? [] : [{ id: e.info.id, index }]));
+    const endsMovement = ['color', 'colorTemp', 'segments', 'scene', 'look', 'palette', 'still'].includes(action.type) || (action.type === 'power' && !action.on);
+    if (look?.motion && canMove(look) && applied.length) this.animator.begin({ ...look, motion: look.motion }, applied);
+    else if (endsMovement) this.animator.release(applied.map((l) => l.id));
+
     if (summary.applied.length) {
       const skipped = summary.skipped.length ? `${summary.skipped.length} skipped` : undefined;
       this.store.log({ source, ok: true, text: `${this.describeTargets(targets)}: ${this.describeAction(action)}`, detail: skipped });
@@ -478,6 +510,31 @@ export class Hub extends EventEmitter {
       return { failed };
     });
     return { summary, done };
+  }
+
+  /** Shows one frame of a moving look. Quieter than apply(): no power, no log entry. */
+  private async paintFrame(id: string, colors: RGB[]): Promise<boolean> {
+    const e = this.entries.get(id);
+    if (!e || colors.length === 0) return false;
+    const groups = groupByColor(colors);
+    const single = groups.length === 1 || !e.info.caps.segments;
+    const appearance: DeviceState['appearance'] = single ? { mode: 'color', rgb: groups[0].rgb } : { mode: 'segments', colors };
+    // Nothing to send when this step lands on the colours already showing.
+    if (JSON.stringify(appearance) === JSON.stringify(e.state.appearance)) return true;
+
+    const cmds: Command[] = single ? [{ cap: 'color', rgb: groups[0].rgb }] : groups.map((g) => ({ cap: 'segmentColor', segments: g.segments, rgb: g.rgb }));
+    this.queue.cancel(id, ['appearance']);
+    e.state.appearance = appearance;
+    e.state.updatedAt = Date.now();
+    e.lastCloud = undefined;
+    this.emit('devices');
+
+    const results = await Promise.allSettled(cmds.map((cmd) => this.queue.push(id, 'appearance', () => this.cloud.send(e.info, cmd))));
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    e.error = failure ? (failure.reason as Error).message : null;
+    this.persist();
+    this.emit('devices');
+    return !failure;
   }
 
   private async refreshAfterFailure(id: string): Promise<void> {

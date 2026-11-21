@@ -16,6 +16,7 @@ export function describeAppearance(d: Device, looks: Look[]): string {
   if (d.state.online === false) return 'Offline';
   if (d.state.power === false) return 'Off';
   const look = d.state.lookId ? looks.find((l) => l.id === d.state.lookId) : undefined;
+  if (d.moving) return `${look?.name ?? 'Colours'} · moving`;
   if (look) return look.name;
   const a = d.state.appearance;
   if (a.mode === 'scene') return a.scene.name;
