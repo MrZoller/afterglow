@@ -504,12 +504,12 @@ code {
   color: var(--ok);
 }
 
-.badge.schedule {
+.badge.by-schedule {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--accent);
 }
 
-.badge.agent {
+.badge.by-agent {
   background: color-mix(in srgb, #8a7bff 26%, transparent);
   color: color-mix(in srgb, #8a7bff 70%, var(--text));
 }
@@ -1692,6 +1692,12 @@ select.input {
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
   gap: 8px;
+}
+
+/* One width for every source label, so the text beside them lines up. */
+.activity .badge {
+  min-width: 70px;
+  text-align: center;
 }
 
 .activity time {

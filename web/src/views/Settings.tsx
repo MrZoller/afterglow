@@ -101,7 +101,7 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
               {activity.slice(0, 30).map((a) => (
                 <li key={a.id} className={a.ok ? '' : 'failed'}>
                   <time>{new Date(a.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
-                  <span className={`badge ${a.source}`}>{a.source === 'app' ? 'You' : a.source === 'schedule' ? 'Schedule' : 'Agent'}</span>
+                  <span className={`badge by-${a.source}`}>{a.source === 'app' ? 'You' : a.source === 'schedule' ? 'Schedule' : 'Agent'}</span>
                   <span>
                     {a.text}
                     {a.detail && <small> · {a.detail}</small>}
