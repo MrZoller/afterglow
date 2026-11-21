@@ -35,13 +35,14 @@ Reported by the owner on 2026-11-21, on four H61A9 and four H7086:
 
 - Every light shows as reached locally, so the identifier a light announces on the local network matches the one Govee's cloud reports.
 - Groups made in the Govee app (`SameModeGroup` and `DreamViewScenic` on this account) are left out after updating: Settings lists the eight lights only.
+- Designs over your own network: the **Test** pattern appears on both the H61A9 and the H7086, so both models act on the undocumented local message.
 - **Send a test** delivers a notification to a phone through ntfy.sh.
 
 ### Known gaps
 
 These additions were developed against simulated lights and a stand-in for the notification service:
 
-- Designs over your own network have not been sent to any real light. The message is undocumented; its layout follows two community projects, neither of which lists the H61A9 or H7086 as tried, and the Home Assistant library lists both models without local segment support. The Test button exists to find out. Also unknown: whether segments are numbered the same way locally as through the cloud, and whether a light already playing a scene switches to the design.
+- Designs over your own network: the Test pattern works on both models (see above), but nothing more has been seen for real. Still unknown: whether a design sent this way looks the same as one sent through the cloud (segments numbered the same way), whether a light already playing a scene switches to the design, how smooth a moving look is at a step every few seconds, and whether messages are ever lost. The message is undocumented, so a Govee firmware update could stop it working.
 - Only the test notification has been seen on a phone. The messages about lights and late schedules go the same way but have not yet happened for real.
 - Whether Govee's cloud refuses a command for a light that is off the network, or accepts it and does nothing. Both are followed up, but only the simulated versions have been seen.
 - How quickly, and how reliably, Govee reports a light as offline and as back. The dropout record and catching up both depend on it for lights not reached locally.
