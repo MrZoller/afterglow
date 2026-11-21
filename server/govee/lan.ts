@@ -56,6 +56,12 @@ export interface LanOptions {
   /** Lights take commands on this port. */
   controlPort?: number;
   scanEveryMs?: number;
+  /**
+   * Extra looks for lights shortly after starting, as delays from the start. The answers to
+   * the very first one are easily missed (on the owner's network it found nothing after a
+   * restart), and waiting for the regular scan leaves the lights to the cloud for a minute.
+   */
+  earlyScansMs?: number[];
   /** A light not heard from for this long is treated as unreachable until it answers a scan again. */
   staleAfterMs?: number;
   statusTimeoutMs?: number;
@@ -80,6 +86,7 @@ const DEFAULTS = {
   listenPort: 4002,
   controlPort: 4003,
   scanEveryMs: 60_000,
+  earlyScansMs: [2_000, 5_000, 10_000, 20_000],
   staleAfterMs: 150_000,
   statusTimeoutMs: 1_200,
   minGapMs: 150,
@@ -96,6 +103,7 @@ export class GoveeLan extends EventEmitter {
   private lights = new Map<string, LanLight>();
   private waiting = new Map<string, ((state: CloudState) => void)[]>();
   private timer: NodeJS.Timeout | null = null;
+  private early: NodeJS.Timeout[] = [];
   /** Per light: the message in front of the next one, and when the last one went out. */
   private queue = new Map<string, Promise<void>>();
   private sentAt = new Map<string, number>();
@@ -133,11 +141,13 @@ export class GoveeLan extends EventEmitter {
     this.socket = socket;
     this.timer = setInterval(() => void this.scan(), this.opts.scanEveryMs);
     this.timer.unref();
+    this.early = this.opts.earlyScansMs.map((delay) => setTimeout(() => void this.scan(), delay).unref());
     await this.scan();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.early.forEach((t) => clearTimeout(t));
     this.socket?.close();
     this.socket = null;
   }

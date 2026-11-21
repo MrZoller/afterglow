@@ -209,3 +209,26 @@ describe('when local control cannot start', () => {
     }
   });
 });
+
+describe('finding lights after starting', () => {
+  it('looks again within seconds when the first look gets no answer, rather than waiting a minute', async () => {
+    const cloudSide = await startFakeGovee({ latencyMs: 1 });
+    const lanSide = await startFakeLan(cloudSide.lights.slice(0, 2), { missedScans: 1 });
+    // The regular scan is a minute away; only the early ones can find the lights in this test.
+    const lan = new GoveeLan({ scanAddress: '127.0.0.1', scanPort: lanSide.scanPort, listenPort: 0, earlyScansMs: [40, 120] });
+    try {
+      let changes = 0;
+      lan.on('change', () => changes++);
+      await lan.start();
+      await wait(20);
+      assert.deepEqual(lan.reachable(), [], 'the first look found nothing');
+      await wait(100);
+      assert.equal(lan.reachable().length, 2);
+      assert.equal(changes, 2, 'and the app is told, so the lights show as reached locally at once');
+    } finally {
+      lan.stop();
+      await lanSide.close();
+      await cloudSide.close();
+    }
+  });
+});

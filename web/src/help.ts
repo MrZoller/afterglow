@@ -285,6 +285,7 @@ export const HELP: HelpTopic[] = [
         answer: [
           {
             list: [
+              'Just after Afterglow starts, every light says “reached through the cloud” until it has answered on your network. That usually takes a few seconds and can take a minute.',
               'Give it a few minutes, then switch the light’s power off and on at the plug.',
               'The computer running Afterglow must be on the same network as the lights. Some routers and mesh systems block the discovery messages between Wi-Fi bands or guest networks.',
               'If the **Connection** section in Settings says local control is unavailable, another app on the same computer is already using the port it needs.',

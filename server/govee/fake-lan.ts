@@ -43,6 +43,8 @@ export async function startFakeLan(
   opts: {
     /** How long a light is busy after a message; one arriving sooner is dropped, as real lights have been seen to do. */
     busyMs?: number;
+    /** How many scans go unanswered at first, as when the first answers after a restart are lost. */
+    missedScans?: number;
   } = {},
 ): Promise<FakeLan> {
   const received: FakeLan['received'] = [];
@@ -111,8 +113,10 @@ export async function startFakeLan(
   const scanner = dgram.createSocket('udp4');
   sockets.push(scanner);
   const scanPort = await bind(scanner);
+  let unanswered = opts.missedScans ?? 0;
   scanner.on('message', (data, from) => {
     if (!data.toString().includes('"scan"')) return;
+    if (unanswered-- > 0) return;
     for (const unit of units) {
       if (muted.has(unit.light.device)) continue;
       const reply = { msg: { cmd: 'scan', data: { ip: '127.0.0.1', port: unit.port, device: unit.light.device, sku: unit.light.sku, bleVersionHard: '3.01.01', bleVersionSoft: '1.03.01', wifiVersionHard: '1.00.10', wifiVersionSoft: '1.02.03' } } };
