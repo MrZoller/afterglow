@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { kelvinToRgb, resample, toHex } from '../shared/color';
-import { canMove, groupByColor, renderLook } from '../shared/looks';
+import { canMove, frameCost, groupByColor, motionStepSeconds, renderLook } from '../shared/looks';
 import type { Action, ApplySummary, Device, DeviceKind, DeviceState, Look, RGB, SceneChoice, Source } from '../shared/types';
 import { Animator } from './animator';
 import { GoveeError, type CloudState, type Command, type DeviceInfo, type GoveeCloud, type SceneOption } from './govee/cloud';
+import { isLanCommand, type GoveeLan, type LanCommand } from './govee/lan';
 import { CommandQueue } from './queue';
 import type { Store } from './store';
 
@@ -21,8 +22,12 @@ interface Entry {
   alias: string | null;
   state: DeviceState;
   error: string | null;
-  /** Colour last read from Govee, used to notice changes made outside this app. */
+  /**
+   * Colour last read from the cloud and from the light itself, used to notice changes made
+   * outside this app. Kept apart because the two can describe the same state differently.
+   */
   lastCloud?: { rgb: RGB | null; kelvin: number | null };
+  lastLan?: { rgb: RGB | null; kelvin: number | null };
 }
 
 interface Plan {
@@ -54,6 +59,8 @@ const slotOf = (cmd: Command): string =>
 
 const sceneKey = (s: { kind: string; name: string }) => `${s.kind}:${s.name.toLowerCase()}`;
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /** Owns the list of lights, their last known state, and everything sent to them. */
 export class Hub extends EventEmitter {
   connected = false;
@@ -67,15 +74,28 @@ export class Hub extends EventEmitter {
   private sceneFetches = new Map<string, Promise<SceneOption[]>>();
   private lastRefresh = new Map<string, number>();
 
+  /** Pause between a local command and the status query that confirms the light is answering. */
+  confirmDelayMs = 120;
+
   constructor(
     private cloud: GoveeCloud,
     private store: Store,
+    /** Local network control, when available. Simple commands prefer it over the cloud. */
+    private lan: GoveeLan | null = null,
   ) {
     super();
+    lan?.on('change', () => this.emit('devices'));
     this.queue = new CommandQueue({ burst: 5, perSecond: 1, maxAttempts: 4, onChange: () => this.emit('devices') });
     for (const d of store.data.devices) this.entries.set(d.info.id, { ...d, error: null });
     this.animator = new Animator(store, {
-      segments: (id) => this.entries.get(id)?.info.caps.segments ?? null,
+      plan: (look, id, index) => {
+        const e = this.entries.get(id);
+        if (!e) return null;
+        const segments = e.info.caps.segments;
+        // A frame can go locally only when it is a single colour for the whole light.
+        const local = !!this.lan?.has(id) && frameCost(look, segments, index) === 1;
+        return { segments, local, stepSeconds: motionStepSeconds(look, segments, index, local) };
+      },
       paint: (id, colors) => this.paintFrame(id, colors),
       // Leave headroom under the daily limit for ordinary use and schedules.
       overBudget: () => store.requestsToday() >= (cloud.limits.dailyLimit ?? 10_000) * 0.85,
@@ -99,6 +119,8 @@ export class Hub extends EventEmitter {
     };
     await attempt(30_000);
     setInterval(() => void this.refresh(), 10 * 60_000).unref();
+    // Asking the lights directly is free, so do it often enough to notice changes made elsewhere.
+    setInterval(() => void this.refreshLocal(), 30_000).unref();
     this.animator.start();
   }
 
@@ -116,6 +138,7 @@ export class Hub extends EventEmitter {
       caps: e.info.caps,
       state: e.state,
       moving: this.animator.has(e.info.id),
+      local: !!this.lan?.has(e.info.id),
       pending: this.queue.pending(e.info.id),
       error: e.error,
     };
@@ -164,11 +187,15 @@ export class Hub extends EventEmitter {
         if (now - (this.lastRefresh.get(id) ?? 0) < minAgeMs) return;
         this.lastRefresh.set(id, now);
         try {
-          const cloud = await this.cloud.getState(e.info);
+          // Ask the light itself when it is reachable; that costs no cloud request.
+          const local = this.lan?.has(id) ? await this.lan.status(id) : null;
+          const seen = local ?? (await this.cloud.getState(e.info));
           if (this.queue.pending(id) > 0) return;
-          this.merge(e, cloud);
-          this.connected = true;
-          this.error = null;
+          this.merge(e, seen, local ? 'lan' : 'cloud');
+          if (!local) {
+            this.connected = true;
+            this.error = null;
+          }
         } catch (err) {
           if (err instanceof GoveeError && (err.status === 0 || err.status === 401)) {
             this.connected = false;
@@ -182,7 +209,29 @@ export class Hub extends EventEmitter {
     this.emit('status');
   }
 
-  private merge(e: Entry, cloud: CloudState): void {
+  /** Reads state straight from the lights that answer locally. */
+  private async refreshLocal(): Promise<void> {
+    if (!this.lan) return;
+    let changed = false;
+    await Promise.all(
+      this.lan.reachable().map(async (id) => {
+        const e = this.entries.get(id);
+        if (!e || this.queue.pending(id) > 0 || Date.now() - e.state.updatedAt < 5_000) return;
+        const seen = await this.lan!.status(id);
+        if (!seen || this.queue.pending(id) > 0) return;
+        const snapshot = () => JSON.stringify([e.state.online, e.state.power, e.state.brightness, e.state.appearance]);
+        const before = snapshot();
+        this.merge(e, seen, 'lan');
+        if (snapshot() !== before) changed = true;
+      }),
+    );
+    if (changed) {
+      this.persist();
+      this.emit('devices');
+    }
+  }
+
+  private merge(e: Entry, cloud: CloudState, source: 'cloud' | 'lan' = 'cloud'): void {
     const st = e.state;
     if (cloud.online !== null) st.online = cloud.online;
     if (cloud.power !== null) st.power = cloud.power;
@@ -191,14 +240,17 @@ export class Hub extends EventEmitter {
     if (cloud.brightness !== null) st.brightness = cloud.brightness;
     // Govee does not report segments or scenes, so what we last applied stays on screen
     // unless the colour it does report has changed, meaning someone used another app.
-    const before = e.lastCloud;
-    const changedElsewhere = !!before && (before.rgb !== cloud.rgb || before.kelvin !== cloud.kelvin);
+    const key = source === 'lan' ? 'lastLan' : 'lastCloud';
+    const before = e[key];
+    // While a scene plays, the colour a light reports for itself may wander, so it proves nothing.
+    const reliable = !(source === 'lan' && st.appearance.mode === 'scene');
+    const changedElsewhere = reliable && !!before && (before.rgb !== cloud.rgb || before.kelvin !== cloud.kelvin);
     if (st.appearance.mode === 'unknown' || changedElsewhere) {
       if (cloud.kelvin) st.appearance = { mode: 'temp', kelvin: cloud.kelvin };
       else if (cloud.rgb !== null) st.appearance = { mode: 'color', rgb: cloud.rgb };
       st.lookId = null;
     }
-    e.lastCloud = { rgb: cloud.rgb, kelvin: cloud.kelvin };
+    e[key] = { rgb: cloud.rgb, kelvin: cloud.kelvin };
     st.syncedAt = Date.now();
   }
 
@@ -457,14 +509,14 @@ export class Hub extends EventEmitter {
 
       plan.patch(e.state);
       e.state.updatedAt = Date.now();
-      if (slots.has('appearance')) e.lastCloud = undefined;
+      if (slots.has('appearance')) e.lastCloud = e.lastLan = undefined;
       summary.applied.push(id);
 
       let reported = false;
       for (const cmd of plan.cmds) {
         jobs.push(
           this.queue
-            .push(id, slotOf(cmd), () => this.cloud.send(e.info, cmd))
+            .push(id, slotOf(cmd), () => this.deliver(e, cmd), this.goesLocal(e, cmd))
             .then(
               () => {
                 if (e.error) {
@@ -512,6 +564,41 @@ export class Hub extends EventEmitter {
     return { summary, done };
   }
 
+  private goesLocal(e: Entry, cmd: Command): boolean {
+    return !!this.lan && isLanCommand(cmd) && this.lan.has(e.info.id);
+  }
+
+  /** Sends over the local network when the light and the command allow it, otherwise through the cloud. */
+  private async deliver(e: Entry, cmd: Command): Promise<void> {
+    if (this.goesLocal(e, cmd) && (await this.sendLocal(e, cmd as LanCommand))) return;
+    await this.cloud.send(e.info, cmd);
+  }
+
+  /**
+   * Local commands are UDP and come with no receipt, so one counts as delivered when the
+   * light answers a status query straight after it. A light that stays silent is left to
+   * the cloud until it shows up on the network again.
+   */
+  private async sendLocal(e: Entry, cmd: LanCommand): Promise<boolean> {
+    const lan = this.lan!;
+    const id = e.info.id;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await lan.command(id, cmd);
+      } catch {
+        break;
+      }
+      await sleep(this.confirmDelayMs);
+      const seen = await lan.status(id);
+      if (!seen) continue;
+      // Power and brightness read back exactly, so a mismatch means the command was lost: send it once more.
+      const landed = cmd.cap === 'power' ? seen.power === cmd.on : cmd.cap === 'brightness' ? seen.brightness === cmd.value : true;
+      if (landed || attempt === 1) return true;
+    }
+    lan.forget(id);
+    return false;
+  }
+
   /** Shows one frame of a moving look. Quieter than apply(): no power, no log entry. */
   private async paintFrame(id: string, colors: RGB[]): Promise<boolean> {
     const e = this.entries.get(id);
@@ -526,10 +613,10 @@ export class Hub extends EventEmitter {
     this.queue.cancel(id, ['appearance']);
     e.state.appearance = appearance;
     e.state.updatedAt = Date.now();
-    e.lastCloud = undefined;
+    e.lastCloud = e.lastLan = undefined;
     this.emit('devices');
 
-    const results = await Promise.allSettled(cmds.map((cmd) => this.queue.push(id, 'appearance', () => this.cloud.send(e.info, cmd))));
+    const results = await Promise.allSettled(cmds.map((cmd) => this.queue.push(id, 'appearance', () => this.deliver(e, cmd), this.goesLocal(e, cmd))));
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
     e.error = failure ? (failure.reason as Error).message : null;
     this.persist();

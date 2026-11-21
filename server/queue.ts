@@ -2,6 +2,8 @@ import { RateLimitError } from './govee/cloud';
 
 interface Task {
   slot: string;
+  /** Sent over the local network: no pacing needed, since Govee's limits only apply to the cloud. */
+  local: boolean;
   run: () => Promise<void>;
   resolve: (outcome: 'sent' | 'superseded') => void;
   reject: (err: Error) => void;
@@ -66,10 +68,10 @@ export class CommandQueue {
     lane.tasks = keep;
   }
 
-  push(deviceId: string, slot: string, run: () => Promise<void>): Promise<'sent' | 'superseded'> {
+  push(deviceId: string, slot: string, run: () => Promise<void>, local = false): Promise<'sent' | 'superseded'> {
     const lane = this.lane(deviceId);
     const done = new Promise<'sent' | 'superseded'>((resolve, reject) => {
-      lane.tasks.push({ slot, run, resolve, reject, attempts: 0 });
+      lane.tasks.push({ slot, local, run, resolve, reject, attempts: 0 });
     });
     this.opts.onChange?.(deviceId);
     void this.pump(deviceId, lane);
@@ -81,21 +83,28 @@ export class CommandQueue {
     lane.busy = true;
     try {
       while (lane.tasks.length) {
-        const now = Date.now();
-        if (lane.pausedUntil > now) await sleep(lane.pausedUntil - now);
+        // Order within a light is always kept; only cloud commands wait for the rate limit.
+        const local = lane.tasks[0].local;
+        if (!local) {
+          const now = Date.now();
+          if (lane.pausedUntil > now) {
+            await sleep(lane.pausedUntil - now);
+            continue; // the head of the queue may have changed while waiting
+          }
 
-        const elapsed = (Date.now() - lane.refilledAt) / 1000;
-        lane.tokens = Math.min(this.opts.burst, lane.tokens + elapsed * this.opts.perSecond);
-        lane.refilledAt = Date.now();
-        if (lane.tokens < 1) {
-          await sleep(((1 - lane.tokens) / this.opts.perSecond) * 1000);
-          continue;
+          const elapsed = (Date.now() - lane.refilledAt) / 1000;
+          lane.tokens = Math.min(this.opts.burst, lane.tokens + elapsed * this.opts.perSecond);
+          lane.refilledAt = Date.now();
+          if (lane.tokens < 1) {
+            await sleep(((1 - lane.tokens) / this.opts.perSecond) * 1000);
+            continue;
+          }
         }
 
         // The task may have been cancelled while we were waiting.
         const task = lane.tasks.shift();
         if (!task) break;
-        lane.tokens -= 1;
+        if (!task.local) lane.tokens -= 1;
         try {
           await task.run();
           task.resolve('sent');

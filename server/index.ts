@@ -5,6 +5,8 @@ import { aiEnabled } from './ai';
 import { config } from './config';
 import { GoveeCloud } from './govee/cloud';
 import { startFakeGovee } from './govee/fake';
+import { startFakeLan } from './govee/fake-lan';
+import { GoveeLan } from './govee/lan';
 import { Hub } from './hub';
 import { createApi, Events, requireAuth, sameOrigin, staticApp, type Services } from './http';
 import { mcpHandler } from './mcp';
@@ -16,9 +18,19 @@ async function main() {
   // Demo data lives in its own file so it never mixes with the real lights.
   const store = new Store(config.dataDir, config.demo ? 'demo.json' : 'afterglow.json');
 
-  const baseUrl = config.demo ? (await startFakeGovee()).url : config.apiBase;
-  const cloud = new GoveeCloud({ apiKey: config.demo ? 'demo' : config.apiKey, baseUrl, onRequest: () => store.countRequest() });
-  const hub = new Hub(cloud, store);
+  const fake = config.demo ? await startFakeGovee() : null;
+  const cloud = new GoveeCloud({ apiKey: fake ? 'demo' : config.apiKey, baseUrl: fake?.url ?? config.apiBase, onRequest: () => store.countRequest() });
+
+  let lan: GoveeLan | null = null;
+  if (config.lan) {
+    if (fake) {
+      // In the demo the rope lights also answer locally, so both paths can be seen.
+      const fakeLan = await startFakeLan(fake.lights.filter((l) => l.sku === 'H61A9'));
+      lan = new GoveeLan({ scanAddress: '127.0.0.1', scanPort: fakeLan.scanPort, listenPort: 0 });
+    } else lan = new GoveeLan();
+    await lan.start();
+  }
+  const hub = new Hub(cloud, store, lan);
 
   const status = (): Status => {
     const loc = store.data.settings.location;
@@ -34,6 +46,7 @@ async function main() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       authRequired: !!config.accessToken,
       ai: aiEnabled(),
+      lan: { enabled: !!lan, error: lan?.error ?? null },
       version: config.version,
     };
   };
@@ -70,15 +83,16 @@ async function main() {
   app.use(...staticApp());
 
   app.listen(config.port, config.host, () => {
-    const lan = Object.values(os.networkInterfaces())
+    const addresses = Object.values(os.networkInterfaces())
       .flat()
       .filter((n) => n && n.family === 'IPv4' && !n.internal)
       .map((n) => `http://${n!.address}:${config.port}`);
     console.log(`Afterglow ${config.version} is running${config.demo ? ' in demo mode (simulated lights)' : ''}`);
     console.log(`  This computer:  http://localhost:${config.port}`);
-    if (config.host === '0.0.0.0' && lan.length) console.log(`  Your network:   ${lan.join('  ')}`);
+    if (config.host === '0.0.0.0' && addresses.length) console.log(`  Your network:   ${addresses.join('  ')}`);
     console.log(`  MCP endpoint:   http://localhost:${config.port}/mcp`);
     if (!config.demo && !hub.connected) console.log(`  Govee problem:  ${hub.error}`);
+    if (lan?.error) console.log(`  Local control:  unavailable (${lan.error}); using Govee's cloud for everything`);
   });
 
   const stop = () => {

@@ -274,11 +274,24 @@ export function LookEditor({ look, onClose, tryOn = 'all', assist }: { look: Loo
   const movement = (() => {
     if (!draft.motion) return null;
     if (draft.colors.length < 2) return 'Add a second colour for the look to move between.';
-    const lights = targetDevices(snap, [target]);
-    const step = motionStepSeconds(draft, lights.map((d) => d.caps.segments));
-    const perHour = Math.round(lights.reduce((sum, d, i) => sum + (frameCost(draft, d.caps.segments, i) * 3600) / step, 0));
+    const plans = targetDevices(snap, [target]).map((d, i) => {
+      const cost = frameCost(draft, d.caps.segments, i);
+      // Only a single colour for the whole light can go over the local network.
+      const local = d.local && cost === 1;
+      return { local, cost, step: motionStepSeconds(draft, d.caps.segments, i, local) };
+    });
+    const near = plans.filter((p) => p.local);
+    const far = plans.filter((p) => !p.local);
+    const perHour = Math.round(far.reduce((sum, p) => sum + (p.cost * 3600) / p.step, 0));
+    const nearText = near.length ? `a tiny step about every ${stepLabel(Math.max(...near.map((p) => p.step)))} over your own network, using no Govee requests` : '';
+    const farText = far.length ? `a step about every ${stepLabel(Math.max(...far.map((p) => p.step)))} through Govee's cloud, roughly ${perHour} requests an hour` : '';
     const effect = draft.pattern === 'solid' ? 'The lights change colour together' : draft.pattern === 'perLight' ? 'Colours travel from light to light' : 'Colours flow along each light';
-    return `${effect}, a small step about every ${stepLabel(step)}. On ${describeTargets([target], snap).toLowerCase()} that is roughly ${perHour} requests an hour. The preview at the top is sped up.`;
+    const where = describeTargets([target], snap).toLowerCase();
+    const pace =
+      near.length && far.length
+        ? `On ${where}, ${plural(near.length, 'light')} ${near.length === 1 ? 'takes' : 'take'} ${nearText}; the other ${far.length} ${far.length === 1 ? 'takes' : 'take'} ${farText}.`
+        : `On ${where}, each light takes ${nearText || farText}.`;
+    return `${effect}. ${pace} The preview at the top is sped up.`;
   })();
 
   const save = async () => {

@@ -84,14 +84,21 @@ export function frameCost(look: Renderable, segments: number, index = 0): number
 }
 
 /**
- * Seconds between steps of a moving look. Short enough to look gradual, long enough
- * that each light stays within its hourly request allowance.
- * @param lights segment count of each light the look is applied to
+ * Seconds between steps of a moving look on one light: short enough to look gradual,
+ * and for cloud commands long enough that the light stays within its hourly allowance.
+ * @param segments the light's segment count
+ * @param index the light's position among the lights the look is applied to
+ * @param local true when the light can be driven over the local network, which has no
+ *   request limit but can only set one colour for the whole light
  */
-export function motionStepSeconds(look: Renderable, lights: number[]): number {
+export function motionStepSeconds(look: Renderable, segments: number, index = 0, local = false): number {
   if (!look.motion) return 0;
-  const gradual = (look.motion.loopMinutes * 60) / (Math.max(2, look.colors.length) * 8);
-  const cost = Math.max(1, ...lights.map((segments, i) => frameCost(look, segments, i)));
+  const loop = look.motion.loopMinutes * 60;
+  const colours = Math.max(2, look.colors.length);
+  const cost = frameCost(look, segments, index);
+  // Locally there is nothing to ration, so take many small steps: 60 between neighbouring colours.
+  if (local && cost === 1) return Math.max(5, Math.min(60, Math.round(loop / (colours * 60))));
+  const gradual = loop / (colours * 8);
   const allowance = (cost * 3600) / MOTION_REQUESTS_PER_LIGHT_HOUR;
   return Math.round(Math.max(30, gradual, allowance) / 5) * 5;
 }

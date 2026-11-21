@@ -36,6 +36,7 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
           ) : (
             <p className="error-text">Not connected: {status.error ?? 'unknown problem'}</p>
           )}
+          <LocalControl />
           <dl className="kv">
             <dt>Requests sent today</dt>
             <dd>
@@ -110,6 +111,23 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
         </section>
       </div>
     </>
+  );
+}
+
+/** Says how many lights can be driven straight over the home network, and how to add the rest. */
+function LocalControl() {
+  const { status, devices } = useSnap();
+  const near = devices.filter((d) => d.local).length;
+  if (!status.lan.enabled) return <p className="muted small">Local control is switched off, so everything goes through Govee’s cloud.</p>;
+  if (status.lan.error) return <p className="error-text">Local control is unavailable: {status.lan.error}. Everything goes through Govee’s cloud.</p>;
+  if (devices.length === 0) return null;
+  return (
+    <p>
+      <span className={`badge${near ? ' ok' : ''}`}>Local</span>{' '}
+      {near === devices.length ? `All ${near} lights answer` : near === 0 ? 'No lights answer' : `${near} of ${devices.length} lights answer`} on your own network.
+      {near > 0 && ' On/off, brightness, single colours and white go straight to them, instantly and without using Govee requests. Multi-colour designs and Govee scenes still go through the cloud.'}
+      {near < devices.length && ` To add ${near === 0 ? 'them' : 'the rest'}, open each light’s settings in the Govee Home app and turn on LAN Control; they appear here within a minute.`}
+    </p>
   );
 }
 
@@ -190,7 +208,7 @@ function DeviceRow({ device }: { device: Device }) {
       <input className="input" aria-label={`Name for ${device.goveeName}`} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <small>
         {MODEL_NAMES[device.kind]} · {device.sku}
-        {device.caps.segments > 0 && ` · ${device.caps.segments} segments`}
+        {device.caps.segments > 0 && ` · ${device.caps.segments} segments`} · {device.local ? 'reached locally' : 'reached through the cloud'}
       </small>
     </div>
   );

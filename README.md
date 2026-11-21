@@ -40,6 +40,20 @@ Open <http://localhost:4680>. You will see the simulated lights.
 
 Demo data and real data are kept in separate files, so nothing from the demo carries over.
 
+### Turn on local control
+
+Afterglow can talk to the lights directly over your home network as well as through Govee's cloud. Direct commands are instant, use none of your Govee request allowance, and work when the internet or Govee's service is down.
+
+In the Govee Home app, open each light's settings and turn on **LAN Control** (it can take a few minutes to appear after the light powers up). Within a minute the light shows as "reached locally" under Settings → Lights. Nothing else needs configuring.
+
+| Goes straight to the light | Goes through Govee's cloud |
+| --- | --- |
+| On/off, brightness, single colours, white | Multi-colour designs (gradients, blocks, painted) |
+| Reading a light's state, every 30 seconds | Govee scenes, DIY scenes and snapshots |
+| Movement steps on looks that show one colour per light | Movement steps on multi-colour looks |
+
+If a light stops answering locally, its commands go through the cloud until it reappears. The Mac must be on the same network as the lights, and macOS may ask whether Node may accept incoming connections; allow it. Local control uses UDP port 4002, which only one app on the computer can hold, so it will be unavailable if another Govee integration is running there. Set `LAN=0` in `.env` to switch it off.
+
 ### Keep it running on a Mac
 
 ```bash
@@ -66,7 +80,7 @@ Turn on **Movement** in the look editor and choose how long one full loop throug
 - **One per light**: each light takes on its neighbour's colour, so colours travel from light to light.
 - **Gradient, Blocks, Alternating, Painted**: colours flow along each light.
 
-Solid and One per light cost one request per light per step, so they move in the smallest steps. The editor's preview plays the loop in a few seconds and tells you how often the lights will really update. A moving look works anywhere a look does, including schedules: "sunset to 11 PM, Drifting aurora" starts moving at sunset and stops when the lights turn off.
+Solid and One per light show each light in a single colour, so they move in the smallest steps, and with local control turned on those steps are sent straight to the lights every few seconds. The editor's preview plays the loop in a few seconds and tells you how often the lights will really update. A moving look works anywhere a look does, including schedules: "sunset to 11 PM, Drifting aurora" starts moving at sunset and stops when the lights turn off.
 
 ## Describe a look
 
@@ -92,9 +106,9 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 
 ## Things worth knowing
 
-- **Govee limits requests.** Each change to a light is one request, and a design with several colours is one request per colour, per light. Afterglow paces commands, retries when Govee asks it to slow down, and draws gradients in at most eight bands. Settings shows how many requests were sent today.
+- **Govee limits cloud requests.** Each change sent through the cloud is one request, and a design with several colours is one request per colour, per light. Commands sent locally do not count. Afterglow paces commands, retries when Govee asks it to slow down, and draws gradients in at most eight bands. Settings shows how many requests were sent today.
 - **Some state is remembered, not read.** Govee reports power, brightness and a single colour, but not segment colours or the running scene. Afterglow shows what it last applied, and falls back to what Govee reports when it sees the colour change from elsewhere.
-- **Movement is slow by design.** A moving look takes a small step every minute or so, never more than about 75 requests per light per hour, and pauses for the day if the account gets close to Govee's daily limit. It keeps going until you apply something else, hold it, or switch the lights off, and it carries on after a restart. Fast effects such as chases and flicker come from Govee's own scenes, because the API cannot send colours quickly enough.
+- **Movement is slow by design.** On a light reached locally, a look that shows it in one colour (Solid, One per light) moves in tiny steps every 5 to 60 seconds. Through the cloud a moving look takes a small step every minute or so, never more than about 75 requests per light per hour, and pauses for the day if the account gets close to Govee's daily limit. It keeps going until you apply something else, hold it, or switch the lights off, and it carries on after a restart. Fast effects such as chases and flicker come from Govee's own scenes, because the API cannot send colours quickly enough.
 - **DIY scenes and snapshots** are created in the Govee app. Use the reload button on the Scenes tab to pick up new ones.
 - **Overlapping schedules**: when two start at the same minute, one limited to a time of year wins over an everyday one.
 - **Your data** is one readable file, `data/afterglow.json`. Copy it to back up looks, zones and schedules.
@@ -114,7 +128,9 @@ npm test
 | Path | What it holds |
 | --- | --- |
 | `server/govee/cloud.ts` | Client for Govee's cloud API |
+| `server/govee/lan.ts` | Client for Govee's local network API |
 | `server/govee/fake.ts` | Simulated Govee service used by demo mode and the tests |
+| `server/govee/fake-lan.ts` | Simulated local-network lights for demo mode and the tests |
 | `server/hub.ts` | Lights, their state, and turning actions into commands |
 | `server/queue.ts` | Per-light command pacing and retries |
 | `server/scheduler.ts` | Schedule times, including sunrise and sunset |

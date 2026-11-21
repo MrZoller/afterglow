@@ -129,6 +129,7 @@ function build(services: Services): McpServer {
           brightness: d.state.brightness,
           showing: showing(d),
           moving: d.moving || undefined,
+          reached: d.local ? 'local network' : 'cloud',
           segments: d.caps.segments,
           online: d.state.online,
           problem: d.error ?? undefined,

@@ -59,6 +59,8 @@ export interface Device {
   state: DeviceState;
   /** True while a moving look is slowly changing this light's colours. */
   moving: boolean;
+  /** True when the light answers on the local network, so simple commands skip Govee's cloud. */
+  local: boolean;
   /** Commands waiting to be sent. */
   pending: number;
   error: string | null;
@@ -179,6 +181,8 @@ export interface Status {
   authRequired: boolean;
   /** Whether look suggestions from a description are available. */
   ai: boolean;
+  /** Local network control: off, or on with any problem that stops it working. */
+  lan: { enabled: boolean; error: string | null };
   version: string;
 }
 

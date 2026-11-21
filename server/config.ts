@@ -22,6 +22,8 @@ export const config = {
   port: Number(env('PORT')) || 4680,
   host: env('HOST') || '0.0.0.0',
   accessToken: env('ACCESS_TOKEN'),
+  /** Talk to lights directly over the local network where possible. Set LAN=0 to use the cloud only. */
+  lan: env('LAN') !== '0',
   dataDir: env('DATA_DIR') || path.join(root, 'data'),
   webDir: path.join(root, 'dist', 'web'),
   version: '0.1.0',

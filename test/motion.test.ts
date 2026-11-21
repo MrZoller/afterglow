@@ -71,13 +71,23 @@ describe('moving looks', () => {
 
   it('paces steps to look gradual without overspending requests', () => {
     // 30-minute loop over 3 colours: 8 steps between neighbours is one every 75 seconds.
-    assert.equal(motionStepSeconds(moving('solid'), [15, 15]), 75);
+    assert.equal(motionStepSeconds(moving('solid'), 15), 75);
     // Three colours per light per step: held to 75 requests per light per hour.
-    assert.equal(motionStepSeconds(moving('blocks'), [15]), 145);
-    assert.ok((frameCost(moving('blocks'), 15) * 3600) / motionStepSeconds(moving('blocks'), [15]) <= 75);
+    assert.equal(motionStepSeconds(moving('blocks'), 15), 145);
+    assert.ok((frameCost(moving('blocks'), 15) * 3600) / motionStepSeconds(moving('blocks'), 15) <= 75);
     // A four-hour loop steps far less often; a very short one never steps faster than the allowance.
-    assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 240 } }, [15]), 600);
-    assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 2 } }, [15]), 50);
+    assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 240 } }, 15), 600);
+    assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 2 } }, 15), 50);
+  });
+
+  it('takes many small steps on lights reached over the local network', () => {
+    // No request limit locally: 60 steps between neighbouring colours, between 5 and 60 seconds apart.
+    assert.equal(motionStepSeconds(moving('solid'), 15, 0, true), 10);
+    assert.equal(motionStepSeconds({ ...moving('perLight'), motion: { loopMinutes: 10 } }, 15, 1, true), 5);
+    assert.equal(motionStepSeconds({ ...moving('solid'), motion: { loopMinutes: 240 } }, 15, 0, true), 60);
+    // Several colours on one light cannot be sent locally, so the cloud pace applies even there.
+    assert.equal(motionStepSeconds(moving('blocks'), 15, 0, true), 145);
+    assert.equal(motionStepSeconds(moving('blocks'), 0, 0, true), 10); // a light without segments shows one colour
   });
 });
 
@@ -129,7 +139,7 @@ describe('running a moving look', () => {
     assert.deepEqual(sent(ids()[1]), [['powerSwitch', 1], ['colorRgb', GREEN]]);
     assert.deepEqual(hub.list().slice(0, 4).map((d) => d.moving), [true, true, true, false]);
     assert.equal(store.data.animations.length, 1);
-    assert.equal(store.data.animations[0].stepSeconds, 75);
+    assert.deepEqual(store.data.animations[0].lights.map((l) => l.nextAt - started()), [75_000, 75_000, 75_000]);
   });
 
   it('sends each light its next colour when a step is due, and nothing before', async () => {

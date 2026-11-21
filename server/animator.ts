@@ -1,4 +1,4 @@
-import { motionStepSeconds, renderLook } from '../shared/looks';
+import { renderLook } from '../shared/looks';
 import type { Look, RGB } from '../shared/types';
 import type { Store } from './store';
 
@@ -6,6 +6,11 @@ import type { Store } from './store';
  * Runs moving looks: every so often it works out how far round its loop each one is and
  * sends the lights their next colours. A light leaves its animation as soon as anything
  * else is applied to it.
+ *
+ * Each light steps at its own pace. One reached over the local network can take a tiny
+ * step every few seconds; one driven through Govee's cloud steps less often to stay
+ * inside its request allowance. Because the colours come from the clock, lights
+ * stepping at different rates still stay together.
  */
 
 export interface StoredAnimation {
@@ -13,18 +18,23 @@ export interface StoredAnimation {
   /** A copy of the look as it was when applied, so later edits do not change it mid-run. */
   look: Pick<Look, 'colors' | 'pattern' | 'segments'> & { motion: NonNullable<Look['motion']>; name: string };
   startedAt: number;
-  stepSeconds: number;
-  nextAt: number;
   /** `index` is the light's position among the lights the look was applied to. */
-  lights: { id: string; index: number }[];
+  lights: { id: string; index: number; nextAt: number }[];
+}
+
+export interface FramePlan {
+  segments: number;
+  /** True when this light's frames go over the local network and cost no cloud requests. */
+  local: boolean;
+  stepSeconds: number;
 }
 
 export interface AnimationHost {
-  /** Segment count of a light, or null when the light no longer exists. */
-  segments(deviceId: string): number | null;
+  /** How to drive this light for this look right now, or null when the light no longer exists. */
+  plan(look: StoredAnimation['look'], deviceId: string, index: number): FramePlan | null;
   /** Shows a frame on a light; resolves false when it could not be sent. */
   paint(deviceId: string, colors: RGB[]): Promise<boolean>;
-  /** True when today's requests are close enough to Govee's limit that animations should wait. */
+  /** True when today's cloud requests are close enough to Govee's limit that animations should wait. */
   overBudget(): boolean;
   /** Says something in the activity log. */
   note(text: string): void;
@@ -42,10 +52,13 @@ export class Animator {
   constructor(
     private store: Store,
     private host: AnimationHost,
-  ) {}
+  ) {
+    // Animations saved by an earlier version kept one timer for all their lights.
+    for (const a of this.animations) for (const light of a.lights) light.nextAt ??= Date.now();
+  }
 
   start(): void {
-    setInterval(() => void this.tick(), 5_000).unref();
+    setInterval(() => void this.tick(), 2_000).unref();
   }
 
   private get animations(): StoredAnimation[] {
@@ -57,16 +70,14 @@ export class Animator {
   }
 
   /** Starts moving a look on lights that are already showing its first frame. */
-  begin(look: StoredAnimation['look'], lights: StoredAnimation['lights'], now = Date.now()): void {
+  begin(look: StoredAnimation['look'], lights: { id: string; index: number }[], now = Date.now()): void {
     this.release(lights.map((l) => l.id), false);
-    const stepSeconds = motionStepSeconds(look, lights.map((l) => this.host.segments(l.id) ?? 0));
+    const stored: StoredAnimation['look'] = { name: look.name, colors: look.colors, pattern: look.pattern, segments: look.segments, motion: look.motion };
     this.animations.push({
       id: crypto.randomUUID(),
-      look: { name: look.name, colors: look.colors, pattern: look.pattern, segments: look.segments, motion: look.motion },
+      look: stored,
       startedAt: now,
-      stepSeconds,
-      nextAt: now + stepSeconds * 1000,
-      lights,
+      lights: lights.map((l) => ({ ...l, nextAt: now + (this.host.plan(stored, l.id, l.index)?.stepSeconds ?? 60) * 1000 })),
     });
     this.store.save();
     this.host.changed();
@@ -90,46 +101,53 @@ export class Animator {
     if (notify) this.host.changed();
   }
 
-  /** Sends the next frame of every animation that is due. */
+  /** Sends the next frame to every light that is due one. */
   async tick(now = Date.now()): Promise<void> {
     if (this.busy) return;
-    const due = this.animations.filter((a) => now >= a.nextAt);
-    if (due.length === 0) return;
-
-    if (this.host.overBudget()) {
-      const today = new Date(now).toDateString();
-      if (this.pausedOn !== today) {
-        this.pausedOn = today;
-        this.host.note("Moving looks are paused for today to stay inside Govee's daily request limit");
-      }
-      return;
-    }
-
     this.busy = true;
     try {
-      for (const a of due) {
-        // After a gap (the computer slept) this jumps to where the loop should be now.
-        a.nextAt = now + a.stepSeconds * 1000;
+      const gone: string[] = [];
+      const work: Promise<void>[] = [];
+      for (const a of [...this.animations]) {
         const phase = ((now - a.startedAt) / 60_000 / a.look.motion.loopMinutes) % 1;
-        const gone: string[] = [];
-        await Promise.all(
-          a.lights.map(async (light) => {
-            const segments = this.host.segments(light.id);
-            if (segments === null) return void gone.push(light.id);
-            const sent = await this.host.paint(light.id, renderLook(a.look, segments, light.index, phase));
-            const count = sent ? 0 : (this.failures.get(light.id) ?? 0) + 1;
-            this.failures.set(light.id, count);
-            if (count >= MAX_FAILURES) {
-              gone.push(light.id);
-              this.host.note(`Stopped moving "${a.look.name || 'colours'}" on a light after repeated failures`);
+        for (const light of a.lights) {
+          if (now < light.nextAt) continue;
+          const plan = this.host.plan(a.look, light.id, light.index);
+          if (!plan) {
+            gone.push(light.id);
+            continue;
+          }
+          // After a gap (the computer slept) this jumps to where the loop should be now.
+          light.nextAt = now + plan.stepSeconds * 1000;
+
+          // The daily limit only concerns the cloud; lights driven locally keep moving.
+          if (!plan.local && this.host.overBudget()) {
+            const today = new Date(now).toDateString();
+            if (this.pausedOn !== today) {
+              this.pausedOn = today;
+              this.host.note("Moving looks sent through Govee's cloud are paused for today to stay inside its daily request limit");
             }
-          }),
-        );
-        if (gone.length) this.release(gone);
+            continue;
+          }
+
+          work.push(
+            this.host.paint(light.id, renderLook(a.look, plan.segments, light.index, phase)).then((sent) => {
+              const count = sent ? 0 : (this.failures.get(light.id) ?? 0) + 1;
+              this.failures.set(light.id, count);
+              if (count >= MAX_FAILURES) {
+                gone.push(light.id);
+                this.host.note(`Stopped moving "${a.look.name || 'colours'}" on a light after repeated failures`);
+              }
+            }),
+          );
+        }
       }
+      if (work.length === 0 && gone.length === 0) return;
+      await Promise.all(work);
+      if (gone.length) this.release(gone);
+      this.store.save();
     } finally {
       this.busy = false;
-      this.store.save();
     }
   }
 }
