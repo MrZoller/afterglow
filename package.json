@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "description": "A friendly control panel, scheduler and MCP server for Govee outdoor lights",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrZoller/afterglow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MrZoller/afterglow/issues"
+  },
   "engines": {
     "node": ">=22"
   },

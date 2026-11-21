@@ -141,6 +141,12 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 - **Overlapping schedules**: when two start at the same minute, one limited to a time of year wins over an everyday one.
 - **Backups are automatic.** Looks, zones, schedules, settings and how lights are named and arranged are copied every day into `data/backups` and kept for two weeks. Settings → Backups restores one, downloads the current setup as a file, or restores from a file (also the way to move to another computer). The setup being replaced is saved first, so a restore can be undone. Backups never contain the Govee key or passphrase. To keep the daily copies off the computer as well, set `BACKUP_DIR` in `.env` to a folder that syncs elsewhere, such as iCloud Drive.
 
+## Project documents
+
+- [CHANGELOG.md](CHANGELOG.md): what has changed, and what is not yet confirmed on real lights
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to work on the code
+- [SECURITY.md](SECURITY.md): who can reach the app, what it stores and what leaves your computer
+
 ## Development
 
 ```bash
