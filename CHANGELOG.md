@@ -18,7 +18,7 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Changed
 
-- After starting, Afterglow looks for lights on the local network again at 2, 5, 10 and 20 seconds, as well as every minute. On the owner's network the first look after a restart found nothing, which left every light to the cloud for a minute. Not yet confirmed to shorten that wait on real lights.
+- After starting, Afterglow looks for lights on the local network again at 2, 5, 10 and 20 seconds, as well as every minute. On the owner's network the first look after a restart found nothing, which left every light to the cloud for a minute.
 - Messages sent to a light over the local network are now at least 150 ms apart. Lights are reported to drop a message that arrives while they are busy with the one before, and the app used to follow a command with its status query after 120 ms.
 - A schedule missed by more than ten minutes used to be skipped. It is now carried out late (see above).
 - When several schedules come due together, each light is sent only the one that wins, rather than each in turn.
@@ -36,6 +36,7 @@ Reported by the owner on 2026-11-21, on four H61A9 and four H7086:
 - Every light shows as reached locally, so the identifier a light announces on the local network matches the one Govee's cloud reports.
 - Groups made in the Govee app (`SameModeGroup` and `DreamViewScenic` on this account) are left out after updating: Settings lists the eight lights only.
 - Designs over your own network: the **Test** pattern appears on both the H61A9 and the H7086, so both models act on the undocumented local message.
+- With the extra looks for lights after starting, all eight showed as "reached locally, designs too" straight after a restart, where before they took about a minute. Seen once.
 - **Send a test** delivers a notification to a phone through ntfy.sh.
 
 ### Known gaps
