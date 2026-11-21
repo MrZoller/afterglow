@@ -24,14 +24,23 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Fixed
 
+- Groups made in the Govee app were listed as lights. Govee returns them alongside the real lights, marked only by a model name (`SameModeGroup`, `BaseGroup`, `DreamViewScenic`), so "All lights" commands reached each light twice and schedule checks would have waited on the groups. They are now left out and named under Settings → Lights. Found on the owner's account.
+- The check after a schedule no longer waits on a light that has since been removed from the Govee account.
 - Two seconds after a command failed, the app re-read the light and cleared what it showed, even if something newer had been applied in between.
+
+### Confirmed on real lights
+
+Reported by the owner on 2026-11-21, on four H61A9 and four H7086:
+
+- Every light shows as reached locally, so the identifier a light announces on the local network matches the one Govee's cloud reports.
+- **Send a test** delivers a notification to a phone through ntfy.sh.
 
 ### Known gaps
 
 These additions were developed against simulated lights and a stand-in for the notification service:
 
 - Designs over your own network have not been sent to any real light. The message is undocumented; its layout follows two community projects, neither of which lists the H61A9 or H7086 as tried, and the Home Assistant library lists both models without local segment support. The Test button exists to find out. Also unknown: whether segments are numbered the same way locally as through the cloud, and whether a light already playing a scene switches to the design.
-- Notifications have not been sent through the real ntfy service or seen on a phone. The format follows ntfy's documentation.
+- Only the test notification has been seen on a phone. The messages about lights and late schedules go the same way but have not yet happened for real.
 - Whether Govee's cloud refuses a command for a light that is off the network, or accepts it and does nothing. Both are followed up, but only the simulated versions have been seen.
 - How quickly, and how reliably, Govee reports a light as offline and as back. The dropout record and catching up both depend on it for lights not reached locally.
 - What a light does when its power returns after a cut (stays off, or comes back as it was).
@@ -65,10 +74,9 @@ First version. Not tagged as a release.
 
 ### Known gaps
 
-Afterglow was developed against simulated lights. These points are not yet confirmed on real hardware:
+Afterglow was developed against simulated lights. These points are not yet confirmed on real hardware (see "Confirmed on real lights" above for what has been since):
 
 - Whether Govee's stricter (10 per minute per light) or looser published rate limit applies. The app paces and retries either way, but multi-colour designs may be slow to appear under the stricter one.
-- Whether the identifier a light announces on the local network matches the one Govee's cloud reports for it. If not, lights will stay "reached through the cloud".
 - Which end of a light is its first segment. The test pattern in the zone editor exists to find out.
 - Whether a step of a moving look reads as a fade or a small jump.
 - How reliably Govee's cloud reports a light as off or offline, which the turn-off check depends on for lights not reached locally.

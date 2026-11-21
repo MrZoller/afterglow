@@ -312,6 +312,13 @@ export const HELP: HelpTopic[] = [
         ],
       },
       {
+        question: 'Where are the groups I made in the Govee app?',
+        answer: [
+          'Govee lists them next to your lights, but they are left out here. Every light in a group is already listed and controlled directly, so using the group as well would send everything twice. **Lights** in [Settings](#/settings) names the groups that were left out.',
+          'To switch or colour lights together, make a zone with **New zone** on [Lights](#/lights).',
+        ],
+      },
+      {
         question: 'Should I turn off my schedules in the Govee app?',
         answer: ['Yes, for any lights you schedule here. The two apps do not know about each other, so both would run and the last one would win. The turn-off check also only covers schedules made in this app.'],
       },

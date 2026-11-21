@@ -198,6 +198,9 @@ export class Watcher {
   private async check(w: Watch, now: number): Promise<void> {
     const want = this.wanted(w);
     if (!want) return this.remove(w);
+    // A light that has since left the account is nobody's to chase.
+    w.lights = w.lights.filter((id) => this.hub.has(id));
+    if (w.lights.length === 0) return this.remove(w);
     const right = (s: Seen) => s.reachable && (want.power === null || s.power === want.power) && !(w.unsent ?? []).includes(s.id);
 
     const seen = await this.read(w.lights);

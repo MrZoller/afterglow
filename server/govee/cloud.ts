@@ -98,6 +98,22 @@ function sceneOptions(cap: RawCapability | undefined, kind: SceneKind): SceneOpt
     .map((o) => ({ kind, name: o.name.trim(), value: o.value }));
 }
 
+/** Model names Govee gives to groupings made in its app, which its device list returns next to the lights. */
+const GROUP_MODELS = new Set(['SameModeGroup', 'BaseGroup', 'DreamViewScenic']);
+
+/**
+ * True for an entry that is a grouping made in the Govee app rather than a light. Govee
+ * marks these only by model name: `SameModeGroup` and `BaseGroup` for groups of lights,
+ * `DreamViewScenic` for every group made in the app's Feature Hub. (The owner's account
+ * shows the first and last; the Homebridge plugin skips the same three.)
+ *
+ * Every light in a group is listed in its own right, so treating the group as one more
+ * light would send everything twice and give the group a colour of its own.
+ */
+export function isGoveeGroup(raw: any): boolean {
+  return !!raw && typeof raw.sku === 'string' && GROUP_MODELS.has(raw.sku);
+}
+
 export function parseDevice(raw: any): DeviceInfo | null {
   if (!raw || typeof raw.device !== 'string' || typeof raw.sku !== 'string') return null;
   const capabilities: RawCapability[] = Array.isArray(raw.capabilities) ? raw.capabilities : [];
@@ -131,6 +147,8 @@ export function parseDevice(raw: any): DeviceInfo | null {
 
 export class GoveeCloud {
   readonly limits: Limits = { dailyLimit: null, dailyRemaining: null };
+  /** Names of the Govee-app groups left out of the last list of lights. */
+  groups: string[] = [];
 
   constructor(
     private opts: {
@@ -189,8 +207,12 @@ export class GoveeCloud {
 
   async listDevices(): Promise<DeviceInfo[]> {
     const json = await this.request('GET', '/router/api/v1/user/devices');
-    const list: unknown[] = Array.isArray(json?.data) ? json.data : [];
-    return list.map(parseDevice).filter((d): d is DeviceInfo => d !== null);
+    const list: any[] = Array.isArray(json?.data) ? json.data : [];
+    this.groups = list.filter(isGoveeGroup).map((g) => (typeof g.deviceName === 'string' && g.deviceName.trim() ? g.deviceName.trim() : g.sku));
+    return list
+      .filter((raw) => !isGoveeGroup(raw))
+      .map(parseDevice)
+      .filter((d): d is DeviceInfo => d !== null);
   }
 
   async getState(info: DeviceInfo): Promise<CloudState> {

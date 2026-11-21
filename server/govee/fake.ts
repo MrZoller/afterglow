@@ -29,6 +29,8 @@ export interface FakeGovee {
   ignoring: Set<string>;
   /** Lights that have dropped off the network: commands fail and their state is reported as offline. */
   offline: Set<string>;
+  /** Names of the groups, as made in the Govee app, that the device list includes alongside the lights. */
+  groups: string[];
   close(): Promise<void>;
 }
 
@@ -60,6 +62,17 @@ function lights(): FakeLight[] {
     make('H7086', 'Side yard lights', 8, 12, false, 0xffffff),
   ];
 }
+
+/**
+ * Groups made in the Govee app. Govee's device list returns them next to the real lights,
+ * told apart only by a group model name. What their ids look like on a real account is
+ * not known; these are made up.
+ */
+const GROUPS = [
+  { sku: 'SameModeGroup', device: '11849032', deviceName: 'All ropes', instances: ['powerSwitch', 'brightness', 'colorRgb', 'colorTemperatureK'] },
+  { sku: 'DreamViewScenic', device: '11849033', deviceName: 'Front scene', instances: ['powerSwitch', 'brightness'] },
+  { sku: 'BaseGroup', device: '11849034', deviceName: 'Whole yard', instances: ['powerSwitch'] },
+];
 
 function capabilities(light: FakeLight) {
   // Real devices describe segments in two different ways; one model uses each here.
@@ -115,7 +128,10 @@ export async function startFakeGovee(
     res.json({
       code: 200,
       message: 'success',
-      data: all.map((l) => ({ sku: l.sku, device: l.device, deviceName: l.deviceName, type: 'devices.types.light', capabilities: capabilities(l) })),
+      data: [
+        ...all.map((l) => ({ sku: l.sku, device: l.device, deviceName: l.deviceName, type: 'devices.types.light', capabilities: capabilities(l) })),
+        ...GROUPS.map((g) => ({ sku: g.sku, device: g.device, deviceName: g.deviceName, type: 'devices.types.light', capabilities: capabilities(all[0]).filter((c) => g.instances.includes(c.instance)) })),
+      ],
     });
   });
 
@@ -220,6 +236,7 @@ export async function startFakeGovee(
     lights: all,
     ignoring,
     offline,
+    groups: GROUPS.map((g) => g.deviceName),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

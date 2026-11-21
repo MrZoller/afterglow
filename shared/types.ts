@@ -221,6 +221,8 @@ export interface Status {
   ai: boolean;
   /** Local network control: off, or on with any problem that stops it working. */
   lan: { enabled: boolean; error: string | null };
+  /** Names of groups made in the Govee app. Govee lists them alongside the lights; they are left out here, since every light in them is controlled itself. */
+  goveeGroups: string[];
   /** Phone notifications: whether an address is set, when one last went out, and why the last one failed. */
   notify: { enabled: boolean; lastAt: number | null; error: string | null };
   /** Where the app can be opened from: this computer, the home network, and Tailscale when present. */

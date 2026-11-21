@@ -74,6 +74,30 @@ If a light stops answering locally, its commands go through the cloud until it r
 
 This starts Afterglow whenever you log in and restarts it if it stops. Schedules only run on time while the Mac is on and awake (one that was missed is carried out late, when the Mac is next awake), so in **System Settings → Energy** turn on "Prevent automatic sleeping when the display is off", and enable automatic login if the Mac may reboot unattended. macOS may ask once whether Node may accept incoming connections; allow it. To undo, run `./scripts/uninstall-mac.sh`.
 
+### Update to a newer version
+
+In the Afterglow folder:
+
+```bash
+git pull
+```
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+Then restart it. If you used the script above, running it again does that:
+
+```bash
+./scripts/install-mac.sh
+```
+
+Your looks, zones, schedules and settings are kept: they live in `data/`, which updating does not touch.
+
 ### Use it from your phone
 
 Settings → **Open on another device** lists the addresses that work, with a copy button for each. The same list is printed when Afterglow starts.
@@ -156,6 +180,7 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 - **Govee limits cloud requests.** Each change sent through the cloud is one request, and a design with several colours is one request per colour, per light. Commands sent locally do not count. Afterglow paces commands, retries when Govee asks it to slow down, and draws gradients in at most eight bands. Settings shows how many requests were sent today.
 - **Some state is remembered, not read.** Govee reports power, brightness and a single colour, but not segment colours or the running scene. Afterglow shows what it last applied, and falls back to what Govee reports when it sees the colour change from elsewhere.
 - **Movement is slow by design.** On a light reached locally, a look that shows it in one colour (Solid, One per light) moves in tiny steps every 5 to 60 seconds; so does any look on a model with designs over your network switched on. Through the cloud a moving look takes a small step every minute or so, never more than about 75 requests per light per hour, and pauses for the day if the account gets close to Govee's daily limit. It keeps going until you apply something else, hold it, or switch the lights off, and it carries on after a restart. Fast effects such as chases and flicker come from Govee's own scenes, because the API cannot send colours quickly enough.
+- **Groups made in the Govee app are left out.** Govee lists them next to the lights (as models `SameModeGroup`, `BaseGroup` or `DreamViewScenic`). Each of their lights is already controlled directly, so Afterglow ignores the groups and names them under Settings → Lights. Use zones instead.
 - **DIY scenes and snapshots** are created in the Govee app. Use the reload button on the Scenes tab to pick up new ones.
 - **Schedules are followed up.** After a schedule starts or switches lights off, Afterglow asks each light whether it obeyed: 1, 3, 10, 30 and 60 minutes later, stopping as soon as all have. A light that has not, or cannot be reached, is sent the same thing again each time. After a turn-off the schedule's card shows "confirmed off", or names the lights that are still on or unreachable, which are also marked on the Lights page. A light stops being checked as soon as it is seen to be right or anything else is applied to it, so turning one back on yourself is respected. Lights reached locally answer for themselves; for the rest the check relies on what Govee's cloud reports.
 - **Missed schedules are caught up.** A light still not right after that hour is tried every ten minutes for up to a day, so one that returns after a power cut or a Wi-Fi drop is brought into line then, with its own share of the design. If the computer was off or asleep when a schedule was due, each light is given whatever the schedules last said it should be doing, provided that is less than 24 hours old. Lights you have used in Afterglow since are left alone. Settings → Missed schedules has a switch to turn this off.

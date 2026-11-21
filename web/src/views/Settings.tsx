@@ -70,6 +70,11 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
               <DeviceRow key={d.id} device={d} move={(by) => void attempt(api('PUT', '/order', { ids: moved(devices.map((x) => x.id), i, by) }))} first={i === 0} last={i === devices.length - 1} />
             ))}
           </div>
+          {status.goveeGroups.length > 0 && (
+            <p className="muted small govee-groups">
+              Not listed: {plural(status.goveeGroups.length, 'group')} made in the Govee app ({status.goveeGroups.join(', ')}). Each of their lights is already here and controlled directly. To switch lights together, make a zone.
+            </p>
+          )}
         </section>
 
         <section className="card">

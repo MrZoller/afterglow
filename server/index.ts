@@ -63,6 +63,7 @@ async function main() {
       connected: hub.connected,
       error: hub.error,
       requestsToday: store.requestsToday(),
+      goveeGroups: cloud.groups,
       dailyLimit: cloud.limits.dailyLimit,
       dailyRemaining: cloud.limits.dailyRemaining,
       sun: sun ? { sunrise: sun.sunrise.getTime(), sunset: sun.sunset.getTime() } : null,

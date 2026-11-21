@@ -656,6 +656,11 @@ export class Hub extends EventEmitter {
     return { summary, done };
   }
 
+  /** Whether an id still refers to one of the account's lights. */
+  has(id: string): boolean {
+    return this.entries.has(id);
+  }
+
   nameOf(id: string): string {
     const e = this.entries.get(id);
     return e ? (e.alias ?? e.info.goveeName) : 'A removed light';

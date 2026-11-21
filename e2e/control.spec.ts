@@ -98,3 +98,18 @@ test('zones can be created and lights renamed in Settings', async ({ page, app }
   await expect.poll(async () => (await app.snapshot()).devices.some((d) => d.name === 'Side gate')).toBe(true);
   expect((await app.light('Side gate')).goveeName).toBe('Side yard lights');
 });
+
+// The simulated Govee account also returns three groups made in the Govee app, as a real one can.
+test('groups made in the Govee app are left out of the lights and named in Settings', async ({ page, app }) => {
+  const snap = await app.snapshot();
+  expect(snap.devices).toHaveLength(8);
+  expect(snap.devices.map((d) => d.sku).sort()).toEqual(['H61A9', 'H61A9', 'H61A9', 'H61A9', 'H7086', 'H7086', 'H7086', 'H7086']);
+  expect(snap.status.goveeGroups).toEqual(['All ropes', 'Front scene', 'Whole yard']);
+
+  await page.goto('/#/settings');
+  await expect(page.locator('.device-row')).toHaveCount(8);
+  await expect(page.locator('.govee-groups')).toHaveText('Not listed: 3 groups made in the Govee app (All ropes, Front scene, Whole yard). Each of their lights is already here and controlled directly. To switch lights together, make a zone.');
+  await page.goto('/#/lights');
+  await expect(page.getByText('All ropes')).toHaveCount(0);
+  await expect(page.locator('.card', { hasText: 'All lights' }).first()).toContainText('of 8 on');
+});
