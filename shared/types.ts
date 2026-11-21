@@ -61,6 +61,8 @@ export interface Device {
   moving: boolean;
   /** True when the light answers on the local network, so simple commands skip Govee's cloud. */
   local: boolean;
+  /** True when the light is mounted with its last segment where designs should start. */
+  reversed: boolean;
   /** Commands waiting to be sent. */
   pending: number;
   error: string | null;
@@ -69,7 +71,13 @@ export interface Device {
 export interface Group {
   id: string;
   name: string;
+  /** In order: for joined lights, the first is where the run starts. */
   deviceIds: string[];
+  /**
+   * True when the lights are mounted end to end and should behave as one long light.
+   * Looks, painting and movement then run across all of them in order.
+   */
+  joined?: boolean;
 }
 
 export type LookPattern = 'solid' | 'perLight' | 'gradient' | 'blocks' | 'alternate' | 'custom';

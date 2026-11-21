@@ -7,7 +7,7 @@ A friendly control panel for Govee outdoor lights. It runs on a computer at home
 - **Looks**: your own colour designs (a palette plus a pattern), built from a colour picker or a photo.
 - **Slow movement**: any look can drift through its colours over minutes or hours, with no fast effects.
 - **Describe a look** (optional): type what you want, such as "cosy autumn evening", and get designs to preview, adjust and save.
-- **Zones**: named groups of lights such as "Front yard".
+- **Zones**: named groups of lights such as "Front yard". Lights mounted end to end can be joined so they behave as one long light.
 - **Schedules**: clock or sunrise/sunset times with offsets, days of the week, an optional turn-off time, and yearly date ranges for seasonal lighting.
 - **AI agent access**: a built-in MCP server so an assistant such as Claude can control the lights.
 
@@ -82,6 +82,18 @@ Then open `https://<machine>.<tailnet>.ts.net` with no port.
 ### Lock it with a passphrase
 
 Anyone on your network can open the page. To require a passphrase, set `ACCESS_TOKEN=` in `.env` and restart. The same value protects the API and the MCP endpoint.
+
+## Lights joined end to end
+
+When two or more lights are mounted one after another, such as a pair of ropes along a path, put them in a zone and turn on **Joined end to end**. Looks, painting and movement then run across them as one long light instead of repeating on each. A gradient over a joined pair also needs half as many requests per rope.
+
+1. Create a zone with the lights and switch on **Joined end to end**.
+2. Put them in order, from where the run starts to where it ends.
+3. Press **Save and test**. The run should light up green at its start, blue in the middle and red at its end. If one light runs the wrong way, tick **Reversed** for it; if they are in the wrong order, move them; then test again.
+
+To make two runs mirror each other, such as either side of a walkway, start both at the same end. The joined behaviour applies whenever all of a zone's lights are included in what you are controlling (the zone itself, a bigger zone, or all lights); a single rope picked on its own shows the whole design by itself. For a "one per light" look, a joined run counts as one light.
+
+Settings → Lights sets the order lights are listed in, which is also the order colours are handed out in, and has a **Reversed** switch for lights that are not part of a run.
 
 ## Slow movement
 

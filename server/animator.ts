@@ -1,4 +1,4 @@
-import { renderLook } from '../shared/looks';
+import { renderPlaced, type Placement } from '../shared/looks';
 import type { Look, RGB } from '../shared/types';
 import type { Store } from './store';
 
@@ -18,12 +18,24 @@ export interface StoredAnimation {
   /** A copy of the look as it was when applied, so later edits do not change it mid-run. */
   look: Pick<Look, 'colors' | 'pattern' | 'segments'> & { motion: NonNullable<Look['motion']>; name: string };
   startedAt: number;
-  /** `index` is the light's position among the lights the look was applied to. */
-  lights: { id: string; index: number; nextAt: number }[];
+  lights: (AnimatedLight & { nextAt: number })[];
+}
+
+/**
+ * A light in an animation. `index` is its position, or its run's, among everything the
+ * look was applied to; `offset` and `total` are set when it is part of a run of lights
+ * joined end to end.
+ */
+export interface AnimatedLight {
+  id: string;
+  index: number;
+  offset?: number;
+  total?: number;
 }
 
 export interface FramePlan {
-  segments: number;
+  /** Where the light sits now, including its current segment count and direction. */
+  placement: Placement;
   /** True when this light's frames go over the local network and cost no cloud requests. */
   local: boolean;
   stepSeconds: number;
@@ -31,7 +43,7 @@ export interface FramePlan {
 
 export interface AnimationHost {
   /** How to drive this light for this look right now, or null when the light no longer exists. */
-  plan(look: StoredAnimation['look'], deviceId: string, index: number): FramePlan | null;
+  plan(look: StoredAnimation['look'], light: AnimatedLight): FramePlan | null;
   /** Shows a frame on a light; resolves false when it could not be sent. */
   paint(deviceId: string, colors: RGB[]): Promise<boolean>;
   /** True when today's cloud requests are close enough to Govee's limit that animations should wait. */
@@ -70,14 +82,14 @@ export class Animator {
   }
 
   /** Starts moving a look on lights that are already showing its first frame. */
-  begin(look: StoredAnimation['look'], lights: { id: string; index: number }[], now = Date.now()): void {
+  begin(look: StoredAnimation['look'], lights: AnimatedLight[], now = Date.now()): void {
     this.release(lights.map((l) => l.id), false);
     const stored: StoredAnimation['look'] = { name: look.name, colors: look.colors, pattern: look.pattern, segments: look.segments, motion: look.motion };
     this.animations.push({
       id: crypto.randomUUID(),
       look: stored,
       startedAt: now,
-      lights: lights.map((l) => ({ ...l, nextAt: now + (this.host.plan(stored, l.id, l.index)?.stepSeconds ?? 60) * 1000 })),
+      lights: lights.map((l) => ({ ...l, nextAt: now + (this.host.plan(stored, l)?.stepSeconds ?? 60) * 1000 })),
     });
     this.store.save();
     this.host.changed();
@@ -112,7 +124,7 @@ export class Animator {
         const phase = ((now - a.startedAt) / 60_000 / a.look.motion.loopMinutes) % 1;
         for (const light of a.lights) {
           if (now < light.nextAt) continue;
-          const plan = this.host.plan(a.look, light.id, light.index);
+          const plan = this.host.plan(a.look, light);
           if (!plan) {
             gone.push(light.id);
             continue;
@@ -131,7 +143,7 @@ export class Animator {
           }
 
           work.push(
-            this.host.paint(light.id, renderLook(a.look, plan.segments, light.index, phase)).then((sent) => {
+            this.host.paint(light.id, renderPlaced(a.look, plan.placement, phase)).then((sent) => {
               const count = sent ? 0 : (this.failures.get(light.id) ?? 0) + 1;
               this.failures.set(light.id, count);
               if (count >= MAX_FAILURES) {

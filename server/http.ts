@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z, ZodError } from 'zod';
+import { placeLights } from '../shared/looks';
 import type { LookSuggestions, Snapshot } from '../shared/types';
 import { config } from './config';
 import { GoveeError } from './govee/cloud';
@@ -171,8 +172,15 @@ export function createApi(services: Services, events: Events): express.Router {
   });
 
   api.patch('/devices/:id', (req, res) => {
-    const { name } = z.object({ name: z.string().trim().max(60).nullable() }).parse(req.body);
-    hub.rename(req.params.id, name);
+    const change = z.object({ name: z.string().trim().max(60).nullable().optional(), reversed: z.boolean().optional() }).parse(req.body);
+    hub.update(req.params.id, change);
+    res.json({ ok: true });
+  });
+
+  /** The order lights are listed in, which is also the order colours are handed out in. */
+  api.put('/order', (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.string()).max(500) }).parse(req.body);
+    hub.setOrder(ids);
     res.json({ ok: true });
   });
 
@@ -185,15 +193,17 @@ export function createApi(services: Services, events: Events): express.Router {
   /** Look ideas from a description. Only the description, the look being edited and scene names leave this computer. */
   api.post('/ai/looks', async (req, res) => {
     const { prompt, current, targets } = suggestSchema.parse(req.body);
-    const ids = new Set(hub.deviceIds(targets));
-    const lights = hub.list().filter((d) => ids.has(d.id));
+    const all = new Map(hub.list().map((d) => [d.id, d]));
+    const lights = hub.deviceIds(targets).map((id) => all.get(id)!);
     // Scenes are a bonus; a hiccup fetching them should not block the ideas.
     const available = lights.length ? await hub.scenes(targets).then((r) => r.scenes.filter((s) => s.kind === 'light'), () => []) : [];
+    const places = [...placeLights(lights.map((d) => ({ id: d.id, segments: d.caps.segments, reversed: d.reversed })), services.snapshot().groups, (id) => hub.list().some((d) => d.id === id)).values()];
     const result = await suggestLooks({
       prompt,
       current: current ?? null,
-      lightCount: lights.length,
-      segmentCounts: [...new Set(lights.map((d) => d.caps.segments).filter((n) => n > 0))],
+      // Lights joined end to end count as one long light.
+      lightCount: new Set(places.map((p) => p.index)).size,
+      segmentCounts: [...new Set(places.map((p) => p.total ?? p.segments).filter((n) => n > 1))],
       sceneNames: available.map((s) => s.name),
     });
     const suggestions: LookSuggestions = {

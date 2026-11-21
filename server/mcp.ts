@@ -134,7 +134,12 @@ function build(services: Services): McpServer {
           online: d.state.online,
           problem: d.error ?? undefined,
         })),
-        zones: groups.map((g) => ({ name: g.name, lights: g.deviceIds.map((id) => devices.find((d) => d.id === id)?.name).filter(Boolean) })),
+        zones: groups.map((g) => ({
+          name: g.name,
+          lights: g.deviceIds.map((id) => devices.find((d) => d.id === id)?.name).filter(Boolean),
+          // Joined lights are mounted end to end: designs applied to the whole zone run across them as one.
+          joined_end_to_end: g.joined || undefined,
+        })),
         sun: status.sun ? { sunrise: new Date(status.sun.sunrise).toLocaleTimeString(), sunset: new Date(status.sun.sunset).toLocaleTimeString() } : 'location not set',
         connection: status.connected ? status.mode : `problem: ${status.error}`,
       });

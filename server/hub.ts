@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { kelvinToRgb, resample, toHex } from '../shared/color';
-import { canMove, frameCost, groupByColor, motionStepSeconds, renderLook } from '../shared/looks';
+import { kelvinToRgb, toHex } from '../shared/color';
+import { canMove, groupByColor, placeColors, placedCost, placedStepSeconds, placeLights, renderPlaced, type Placement } from '../shared/looks';
 import type { Action, ApplySummary, Device, DeviceKind, DeviceState, Look, RGB, SceneChoice, Source } from '../shared/types';
 import { Animator } from './animator';
 import { GoveeError, type CloudState, type Command, type DeviceInfo, type GoveeCloud, type SceneOption } from './govee/cloud';
@@ -21,6 +21,8 @@ interface Entry {
   info: DeviceInfo;
   alias: string | null;
   state: DeviceState;
+  /** Mounted with its last segment where designs should start. */
+  reversed?: boolean;
   error: string | null;
   /**
    * Colour last read from the cloud and from the light itself, used to notice changes made
@@ -88,13 +90,13 @@ export class Hub extends EventEmitter {
     this.queue = new CommandQueue({ burst: 5, perSecond: 1, maxAttempts: 4, onChange: () => this.emit('devices') });
     for (const d of store.data.devices) this.entries.set(d.info.id, { ...d, error: null });
     this.animator = new Animator(store, {
-      plan: (look, id, index) => {
-        const e = this.entries.get(id);
+      plan: (look, light) => {
+        const e = this.entries.get(light.id);
         if (!e) return null;
-        const segments = e.info.caps.segments;
+        const placement: Placement = { segments: e.info.caps.segments, index: light.index, offset: light.offset, total: light.total, reversed: e.reversed };
         // A frame can go locally only when it is a single colour for the whole light.
-        const local = !!this.lan?.has(id) && frameCost(look, segments, index) === 1;
-        return { segments, local, stepSeconds: motionStepSeconds(look, segments, index, local) };
+        const local = !!this.lan?.has(light.id) && placedCost(look, placement) === 1;
+        return { placement, local, stepSeconds: placedStepSeconds(look, placement, local) };
       },
       paint: (id, colors) => this.paintFrame(id, colors),
       // Leave headroom under the daily limit for ordinary use and schedules.
@@ -124,8 +126,14 @@ export class Hub extends EventEmitter {
     this.animator.start();
   }
 
+  /** Lights in the order the user arranged them; ones they have not placed come last. */
+  private ordered(): Entry[] {
+    const rank = new Map(this.store.data.order.map((id, i) => [id, i]));
+    return [...this.entries.values()].sort((a, b) => (rank.get(a.info.id) ?? Infinity) - (rank.get(b.info.id) ?? Infinity));
+  }
+
   list(): Device[] {
-    return [...this.entries.values()].map((e) => this.view(e));
+    return this.ordered().map((e) => this.view(e));
   }
 
   private view(e: Entry): Device {
@@ -139,13 +147,14 @@ export class Hub extends EventEmitter {
       state: e.state,
       moving: this.animator.has(e.info.id),
       local: !!this.lan?.has(e.info.id),
+      reversed: !!e.reversed,
       pending: this.queue.pending(e.info.id),
       error: e.error,
     };
   }
 
   private persist(): void {
-    this.store.data.devices = [...this.entries.values()].map(({ info, alias, state }) => ({ info, alias, state }));
+    this.store.data.devices = [...this.entries.values()].map(({ info, alias, state, reversed }) => ({ info, alias, state, ...(reversed ? { reversed } : {}) }));
     this.store.save();
   }
 
@@ -254,11 +263,20 @@ export class Hub extends EventEmitter {
     st.syncedAt = Date.now();
   }
 
-  rename(id: string, alias: string | null): void {
+  /** Changes a light's name in this app, or which way round it is mounted. */
+  update(id: string, change: { name?: string | null; reversed?: boolean }): void {
     const e = this.entries.get(id);
     if (!e) throw new HttpError(404, 'Light not found');
-    e.alias = alias?.trim() || null;
+    if (change.name !== undefined) e.alias = change.name?.trim() || null;
+    if (change.reversed !== undefined) e.reversed = change.reversed;
     this.persist();
+    this.emit('devices');
+  }
+
+  /** Sets the order lights are listed in, which is also the order colours are handed out. */
+  setOrder(ids: string[]): void {
+    this.store.data.order = ids.filter((id) => this.entries.has(id));
+    this.store.save();
     this.emit('devices');
   }
 
@@ -270,7 +288,7 @@ export class Hub extends EventEmitter {
       if (e) out.set(id, e);
     };
     for (const target of targets) {
-      if (target === 'all') for (const id of this.entries.keys()) add(id);
+      if (target === 'all') for (const e of this.ordered()) add(e.info.id);
       else if (target.startsWith('group:')) {
         const group = this.store.data.groups.find((g) => g.id === target.slice(6));
         for (const id of group?.deviceIds ?? []) add(id);
@@ -360,7 +378,7 @@ export class Hub extends EventEmitter {
     return { scenes: [...merged.values()], lights: entries.length };
   }
 
-  private async plan(e: Entry, action: Action, index: number, look: Look | undefined, wake: boolean): Promise<Plan | { skip: string }> {
+  private async plan(e: Entry, action: Action, place: Placement, look: Look | undefined, wake: boolean): Promise<Plan | { skip: string }> {
     const caps = e.info.caps;
     const on: Command[] = wake || e.state.power !== true ? [{ cap: 'power', on: true }] : [];
     const shown = (st: DeviceState) => {
@@ -418,8 +436,7 @@ export class Hub extends EventEmitter {
       case 'segments': {
         if (!caps.color) return { skip: 'no colour control' };
         if (action.colors.length === 0) return { skip: 'no colours given' };
-        const colors = caps.segments ? resample(action.colors, caps.segments) : [action.colors[Math.floor(action.colors.length / 2)]];
-        const painted = paint(colors);
+        const painted = paint(placeColors(action.colors, place));
         return {
           cmds: [...on, ...painted.cmds],
           patch: (st) => {
@@ -433,7 +450,7 @@ export class Hub extends EventEmitter {
       case 'palette': {
         if (!look) return { skip: 'look not found' };
         if (!caps.color) return { skip: 'no colour control' };
-        const painted = paint(renderLook(look, caps.segments, index));
+        const painted = paint(renderPlaced(look, place));
         const brightness = look.brightness !== null && caps.brightness ? clampBrightness(look.brightness) : null;
         return {
           cmds: [...on, ...(brightness !== null ? [{ cap: 'brightness', value: brightness } as Command] : []), ...painted.cmds],
@@ -484,9 +501,15 @@ export class Hub extends EventEmitter {
           : undefined;
     if (action.type === 'look' && !look) throw new HttpError(404, 'That look no longer exists');
 
+    // Lights joined end to end share one design, so each light's share depends on what else is targeted.
+    const places = placeLights(
+      entries.map((e) => ({ id: e.info.id, segments: e.info.caps.segments, reversed: !!e.reversed })),
+      this.store.data.groups,
+      (id) => this.entries.has(id),
+    );
     const plans = await Promise.all(
-      entries.map((e, index) =>
-        this.plan(e, action, index, look, source !== 'app').catch((err): { skip: string } => ({ skip: (err as Error).message })),
+      entries.map((e) =>
+        this.plan(e, action, places.get(e.info.id)!, look, source !== 'app').catch((err): { skip: string } => ({ skip: (err as Error).message })),
       ),
     );
 
@@ -543,7 +566,11 @@ export class Hub extends EventEmitter {
 
     // A moving look takes over the lights it was applied to; anything else that changes
     // how a light looks, or switches it off, ends the movement there.
-    const applied = entries.flatMap((e, index) => ('skip' in plans[index] ? [] : [{ id: e.info.id, index }]));
+    const applied = entries.flatMap((e, i) => {
+      if ('skip' in plans[i]) return [];
+      const { index, offset, total } = places.get(e.info.id)!;
+      return [{ id: e.info.id, index, offset, total }];
+    });
     const endsMovement = ['color', 'colorTemp', 'segments', 'scene', 'look', 'palette', 'still'].includes(action.type) || (action.type === 'power' && !action.on);
     if (look?.motion && canMove(look) && applied.length) this.animator.begin({ ...look, motion: look.motion }, applied);
     else if (endsMovement) this.animator.release(applied.map((l) => l.id));

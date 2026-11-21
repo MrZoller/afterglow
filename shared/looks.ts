@@ -1,5 +1,5 @@
 import { resample, sampleGradient, sampleLoop } from './color';
-import type { Look, LookPattern, RGB } from './types';
+import type { Group, Look, LookPattern, RGB } from './types';
 
 /**
  * Each distinct colour on a light costs one request to Govee, so gradients are drawn
@@ -78,29 +78,110 @@ export function renderLook(look: Renderable, segments: number, index = 0, phase 
   }
 }
 
+/** Where one light sits when a design is applied: on its own, or as part of a run of lights joined end to end. */
+export interface Placement {
+  /** The light's own segment count (0 or 1 means it shows a single colour). */
+  segments: number;
+  /** Position of this light, or of the run it belongs to, among everything the design is applied to. */
+  index: number;
+  /** For a light in a run: where its segments start within the run, and the run's total length. */
+  offset?: number;
+  total?: number;
+  /** True when the light is mounted with its last segment where the design should start. */
+  reversed?: boolean;
+}
+
+export interface PlaceableLight {
+  id: string;
+  segments: number;
+  reversed: boolean;
+}
+
+/**
+ * Works out how a design spreads over the lights it is applied to. A zone marked as
+ * joined counts as one long light, provided every one of its lights is included;
+ * a single rope from a pair, targeted on its own, is treated as a light by itself.
+ * @param lights the lights the design is applied to, in order
+ * @param exists whether a light id still refers to a real light (zones may list removed ones)
+ */
+export function placeLights(lights: PlaceableLight[], groups: Pick<Group, 'deviceIds' | 'joined'>[], exists: (id: string) => boolean = () => true): Map<string, Placement> {
+  const byId = new Map(lights.map((l) => [l.id, l]));
+  const runOf = new Map<string, string[]>();
+  for (const group of groups) {
+    if (!group.joined) continue;
+    const members = group.deviceIds.filter(exists);
+    if (members.length < 2 || !members.every((id) => byId.has(id)) || members.some((id) => runOf.has(id))) continue;
+    members.forEach((id) => runOf.set(id, members));
+  }
+
+  const width = (id: string) => Math.max(1, byId.get(id)!.segments);
+  const placed = new Map<string, Placement>();
+  let index = 0;
+  for (const light of lights) {
+    if (placed.has(light.id)) continue;
+    const members = runOf.get(light.id);
+    if (!members) {
+      placed.set(light.id, { segments: light.segments, index: index++, reversed: light.reversed });
+      continue;
+    }
+    const total = members.reduce((sum, id) => sum + width(id), 0);
+    let offset = 0;
+    for (const id of members) {
+      placed.set(id, { segments: byId.get(id)!.segments, index, offset, total, reversed: byId.get(id)!.reversed });
+      offset += width(id);
+    }
+    index++;
+  }
+  return placed;
+}
+
+const cut = (colors: RGB[], p: Placement): RGB[] => {
+  const mine = p.total === undefined ? colors : colors.slice(p.offset ?? 0, (p.offset ?? 0) + Math.max(1, p.segments));
+  return p.reversed ? mine.reverse() : mine;
+};
+
+/** Colours for a light given its placement: its own share of a run, flipped if it is mounted backwards. */
+export function renderPlaced(look: Renderable, p: Placement, phase = 0): RGB[] {
+  return cut(renderLook(look, p.total ?? p.segments, p.index, phase), p);
+}
+
+/** The part of a hand-painted design that falls on a light, stretched to fit the light or its run. */
+export function placeColors(colors: RGB[], p: Placement): RGB[] {
+  const length = p.total ?? Math.max(1, p.segments);
+  const full = length === 1 ? [colors[Math.floor(colors.length / 2)]] : resample(colors, length);
+  return cut(full, p);
+}
+
 /** Requests one step of a moving look costs for a light: one per distinct colour on it. */
 export function frameCost(look: Renderable, segments: number, index = 0): number {
-  return new Set(renderLook(look, segments, index, 0.123)).size;
+  return placedCost(look, { segments, index });
+}
+
+export function placedCost(look: Renderable, p: Placement): number {
+  return new Set(renderPlaced(look, p, 0.123)).size;
 }
 
 /**
  * Seconds between steps of a moving look on one light: short enough to look gradual,
  * and for cloud commands long enough that the light stays within its hourly allowance.
- * @param segments the light's segment count
- * @param index the light's position among the lights the look is applied to
  * @param local true when the light can be driven over the local network, which has no
  *   request limit but can only set one colour for the whole light
  */
-export function motionStepSeconds(look: Renderable, segments: number, index = 0, local = false): number {
+export function placedStepSeconds(look: Renderable, p: Placement, local = false): number {
   if (!look.motion) return 0;
   const loop = look.motion.loopMinutes * 60;
   const colours = Math.max(2, look.colors.length);
-  const cost = frameCost(look, segments, index);
+  const cost = placedCost(look, p);
   // Locally there is nothing to ration, so take many small steps: 60 between neighbouring colours.
   if (local && cost === 1) return Math.max(5, Math.min(60, Math.round(loop / (colours * 60))));
   const gradual = loop / (colours * 8);
   const allowance = (cost * 3600) / MOTION_REQUESTS_PER_LIGHT_HOUR;
   return Math.round(Math.max(30, gradual, allowance) / 5) * 5;
+}
+
+/** As placedStepSeconds, for a light on its own. */
+export function motionStepSeconds(look: Renderable, segments: number, index = 0, local = false): number {
+  return placedStepSeconds(look, { segments, index }, local);
 }
 
 /** Groups segment indexes by colour: one entry per request that has to be sent. */

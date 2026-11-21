@@ -4,15 +4,18 @@ import { Strip } from '../components/Strip';
 import { Empty, Slider, Toggle } from '../components/ui';
 import { AlertIcon, PlusIcon, PowerIcon, SunsetIcon } from '../icons';
 import { control, useSnap } from '../store';
-import { describeAppearance, deviceColors, formatClock, MODEL_NAMES, plural } from '../util';
+import { describeAppearance, deviceColors, formatClock, MODEL_NAMES, plural, runColors } from '../util';
 
 /** What a card showing several lights should draw: a few colours from each light that is on. */
-function composite(devices: Device[]): { colors: RGB[]; scene: boolean } {
+function composite(devices: Device[], joined = false): { colors: RGB[]; scene: boolean } {
   const lit = devices.filter((d) => d.state.power);
-  const colors = lit.flatMap((d) => {
-    const own = deviceColors(d);
-    return own.length > 3 ? resample(own, 3) : own;
-  });
+  // Lights joined end to end are drawn as the one long light they are.
+  const colors = joined
+    ? runColors(lit)
+    : lit.flatMap((d) => {
+        const own = deviceColors(d);
+        return own.length > 3 ? resample(own, 3) : own;
+      });
   return { colors, scene: colors.length === 0 && lit.some((d) => d.state.appearance.mode === 'scene') };
 }
 
@@ -30,6 +33,7 @@ function TargetCard({
   devices,
   kind,
   hero,
+  joined,
   onOpen,
 }: {
   target: string;
@@ -38,10 +42,12 @@ function TargetCard({
   devices: Device[];
   kind?: DeviceKind;
   hero?: boolean;
+  /** The lights are mounted end to end and act as one. */
+  joined?: boolean;
   onOpen: () => void;
 }) {
   const on = devices.some((d) => d.state.power);
-  const { colors, scene } = composite(devices);
+  const { colors, scene } = composite(devices, joined);
   const pending = devices.some((d) => d.pending > 0);
   const empty = devices.length === 0;
 
@@ -122,15 +128,17 @@ export function LightsView({ open, newZone }: { open: (target: string) => void; 
         ) : (
           <div className="grid">
             {groups.map((g) => {
-              const members = devices.filter((d) => g.deviceIds.includes(d.id));
+              const members = g.deviceIds.map((id) => devices.find((d) => d.id === id)).filter((d): d is Device => !!d);
+              const joined = !!g.joined && members.length > 1;
               const lit = members.filter((d) => d.state.power).length;
               return (
                 <TargetCard
                   key={g.id}
                   target={`group:${g.id}`}
                   title={g.name}
-                  subtitle={members.length === 0 ? 'No lights in this zone' : lit === 0 ? `${plural(members.length, 'light')} · off` : `${lit} of ${members.length} on`}
+                  subtitle={members.length === 0 ? 'No lights in this zone' : joined ? `${members.length} lights joined · ${lit === 0 ? 'off' : lit === members.length ? 'on' : `${lit} on`}` : lit === 0 ? `${plural(members.length, 'light')} · off` : `${lit} of ${members.length} on`}
                   devices={members}
+                  joined={joined}
                   onOpen={() => open(`group:${g.id}`)}
                 />
               );

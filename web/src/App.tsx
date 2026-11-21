@@ -105,7 +105,7 @@ export function App() {
 
       {panel && <ControlPanel target={panel} onClose={closePanel} editLook={(look, tryOn) => setLookEdit({ look, tryOn })} editZone={setZoneEdit} />}
       {lookEdit && <LookEditor look={lookEdit.look} tryOn={lookEdit.tryOn} assist={lookEdit.assist} onClose={() => setLookEdit(null)} />}
-      {zoneEdit && <ZoneEditor id={zoneEdit} onClose={() => setZoneEdit(null)} />}
+      {zoneEdit && <ZoneEditor id={zoneEdit} onClose={() => setZoneEdit(null)} onSaved={setZoneEdit} />}
       <Toasts />
     </div>
   );

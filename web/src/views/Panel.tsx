@@ -5,7 +5,7 @@ import { ColorPad } from '../components/ColorPad';
 import { Field, Segmented, Sheet, Slider, Toggle } from '../components/ui';
 import { CheckIcon, PencilIcon, PlusIcon, RefreshIcon, SparkIcon } from '../icons';
 import { api, attempt, control, targetDevices, toast, useSnap } from '../store';
-import { deviceColors, plural } from '../util';
+import { deviceColors, plural, runColors } from '../util';
 import { LookPreview } from './Looks';
 
 type Tab = 'looks' | 'scenes' | 'color' | 'white' | 'paint';
@@ -82,7 +82,7 @@ export function ControlPanel({ target, onClose, editLook, editZone }: { target: 
         {tab === 'scenes' && <ScenesTab target={target} devices={devices} />}
         {tab === 'color' && <ColorTab target={target} devices={devices} />}
         {tab === 'white' && <WhiteTab target={target} devices={devices} />}
-        {tab === 'paint' && <PaintTab key={target} target={target} devices={devices} />}
+        {tab === 'paint' && <PaintTab key={target} target={target} devices={devices} joined={!!group?.joined && devices.length > 1} />}
       </div>
     </Sheet>
   );
@@ -250,10 +250,15 @@ function WhiteTab({ target, devices }: { target: string; devices: Device[] }) {
   );
 }
 
-function PaintTab({ target, devices }: { target: string; devices: Device[] }) {
+function PaintTab({ target, devices, joined }: { target: string; devices: Device[]; joined: boolean }) {
   const { settings } = useSnap();
-  const count = Math.max(0, ...devices.map((d) => d.caps.segments));
+  // Lights joined end to end are painted as one strip, from the start of the run to its end.
+  const count = joined ? devices.reduce((sum, d) => sum + Math.max(1, d.caps.segments), 0) : Math.max(0, ...devices.map((d) => d.caps.segments));
   const initial = useMemo(() => {
+    if (joined) {
+      const run = runColors(devices);
+      if (run.length === count) return run;
+    }
     const source = devices.find((d) => d.caps.segments > 0 && deviceColors(d).length > 0);
     const colors = source ? deviceColors(source) : [0xffffff];
     return colors.length === 1 ? Array<RGB>(count).fill(colors[0]) : resample(colors, count);
@@ -276,7 +281,7 @@ function PaintTab({ target, devices }: { target: string; devices: Device[] }) {
   };
 
   const distinct = new Set(cells).size;
-  const mixed = new Set(devices.filter((d) => d.caps.segments > 0).map((d) => d.caps.segments)).size > 1;
+  const mixed = !joined && new Set(devices.filter((d) => d.caps.segments > 0).map((d) => d.caps.segments)).size > 1;
 
   const saveLook = async () => {
     if (!name.trim()) return toast('Give the look a name first', 'error');
@@ -290,7 +295,8 @@ function PaintTab({ target, devices }: { target: string; devices: Device[] }) {
 
   return (
     <div className="stack">
-      <p className="muted small">Pick a colour, then tap or drag across the segments.{mixed && ' The design is stretched to fit lights with a different number of segments.'}</p>
+      <p className="muted small">Pick a colour, then tap or drag across the segments.{mixed && ' The design is stretched to fit lights with a different number of segments.'}
+        {joined && ' These lights are joined, so this is the whole run from its start to its end.'}</p>
       <div
         className="paint-strip"
         style={{ '--n': count } as CSSProperties}

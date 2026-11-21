@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { toHex } from '../../../shared/color';
-import { canMove, frameCost, MOTION_LOOPS, motionStepSeconds, PATTERNS, renderLook } from '../../../shared/looks';
+import { canMove, MOTION_LOOPS, PATTERNS, placedCost, placedStepSeconds, renderLook } from '../../../shared/looks';
 import type { Action, Look, LookIdea, LookPattern, LookSuggestions, RGB } from '../../../shared/types';
 import { ColorPad } from '../components/ColorPad';
 import { Strip } from '../components/Strip';
@@ -8,7 +8,7 @@ import { Empty, Field, Group, Sheet, Slider, Toggle } from '../components/ui';
 import { CloseIcon, ImageIcon, PencilIcon, PlayIcon, PlusIcon, SparkIcon, TrashIcon } from '../icons';
 import { paletteFromImage } from '../palette';
 import { api, attempt, control, targetDevices, toast, useSnap } from '../store';
-import { describeTargets, MODEL_NAMES, plural } from '../util';
+import { describeTargets, MODEL_NAMES, placementsFor, plural } from '../util';
 
 type Draft = Pick<Look, 'name' | 'colors' | 'pattern' | 'segments' | 'brightness' | 'motion'>;
 
@@ -274,11 +274,14 @@ export function LookEditor({ look, onClose, tryOn = 'all', assist }: { look: Loo
   const movement = (() => {
     if (!draft.motion) return null;
     if (draft.colors.length < 2) return 'Add a second colour for the look to move between.';
-    const plans = targetDevices(snap, [target]).map((d, i) => {
-      const cost = frameCost(draft, d.caps.segments, i);
+    const lights = targetDevices(snap, [target]);
+    const places = placementsFor(snap, lights);
+    const plans = lights.map((d) => {
+      const place = places.get(d.id)!;
+      const cost = placedCost(draft, place);
       // Only a single colour for the whole light can go over the local network.
       const local = d.local && cost === 1;
-      return { local, cost, step: motionStepSeconds(draft, d.caps.segments, i, local) };
+      return { local, cost, step: placedStepSeconds(draft, place, local) };
     });
     const near = plans.filter((p) => p.local);
     const far = plans.filter((p) => !p.local);

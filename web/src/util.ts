@@ -1,4 +1,5 @@
 import { kelvinToRgb, toHex } from '../../shared/color';
+import { placeLights, type Placement } from '../../shared/looks';
 import type { Action, Device, Look, RGB, Schedule, ScheduleView, Snapshot, TimeSpec } from '../../shared/types';
 
 export const MODEL_NAMES: Record<string, string> = { rope: 'Neon rope', garden: 'Garden lights', light: 'Light' };
@@ -10,6 +11,24 @@ export function deviceColors(d: Device): RGB[] {
   if (a.mode === 'temp') return [kelvinToRgb(a.kelvin)];
   if (a.mode === 'segments') return a.colors;
   return [];
+}
+
+/** How a design would spread over these lights, counting a joined zone as one long light. */
+export function placementsFor(snap: Snapshot, devices: Device[]): Map<string, Placement> {
+  return placeLights(
+    devices.map((d) => ({ id: d.id, segments: d.caps.segments, reversed: d.reversed })),
+    snap.groups,
+    (id) => snap.devices.some((d) => d.id === id),
+  );
+}
+
+/** Colours showing along lights joined end to end, from the start of the run to its end. */
+export function runColors(devices: Device[]): RGB[] {
+  return devices.flatMap((d) => {
+    const own = deviceColors(d);
+    const full = own.length === 1 ? Array<RGB>(Math.max(1, d.caps.segments)).fill(own[0]) : own;
+    return d.reversed ? [...full].reverse() : full;
+  });
 }
 
 export function describeAppearance(d: Device, looks: Look[]): string {

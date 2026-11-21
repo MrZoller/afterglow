@@ -95,3 +95,5 @@ export const AlertIcon = icon(
     <path d="M12 10v4M12 17v.500" />
   </>,
 );
+export const ArrowUpIcon = icon(<path d="M12 19V5M6 11l6-6 6 6" />);
+export const ArrowDownIcon = icon(<path d="M12 5v14M6 13l6 6 6-6" />);

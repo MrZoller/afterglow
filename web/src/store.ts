@@ -110,14 +110,20 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.session === 'ready') void api('POST', '/refresh').catch(() => undefined);
 });
 
+/** The lights a target covers, in the order the server will take them: a zone's own order, then as listed. */
 export function targetDevices(snap: Snapshot, targets: string[]): Device[] {
-  const ids = new Set<string>();
+  const byId = new Map(snap.devices.map((d) => [d.id, d]));
+  const out = new Map<string, Device>();
+  const add = (id: string) => {
+    const device = byId.get(id);
+    if (device) out.set(id, device);
+  };
   for (const t of targets) {
-    if (t === 'all') snap.devices.forEach((d) => ids.add(d.id));
-    else if (t.startsWith('group:')) snap.groups.find((g) => g.id === t.slice(6))?.deviceIds.forEach((id) => ids.add(id));
-    else ids.add(t);
+    if (t === 'all') snap.devices.forEach((d) => add(d.id));
+    else if (t.startsWith('group:')) snap.groups.find((g) => g.id === t.slice(6))?.deviceIds.forEach(add);
+    else add(t);
   }
-  return snap.devices.filter((d) => ids.has(d.id));
+  return [...out.values()];
 }
 
 /** Shows the obvious result at once instead of waiting for the server to echo it. */

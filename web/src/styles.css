@@ -1577,6 +1577,67 @@ select.input {
   padding-left: 2px;
 }
 
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-row > .input,
+.order-row > small,
+.order-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-row.boxed {
+  min-height: 50px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.order-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-name {
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.icon-btn.sm {
+  width: 34px;
+  height: 34px;
+}
+
 .copy-row {
   display: flex;
   align-items: center;

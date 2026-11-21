@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Device, Group as Zone } from '../../../shared/types';
-import { Field, Group, Sheet } from '../components/ui';
-import { CopyIcon, PencilIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons';
-import { api, attempt, toast, useSnap } from '../store';
+import { Field, Group, Sheet, Toggle } from '../components/ui';
+import { ArrowDownIcon, ArrowUpIcon, CopyIcon, PencilIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons';
+import { api, attempt, control, toast, useSnap } from '../store';
 import { formatClock, MODEL_NAMES, plural } from '../util';
 
 export function SettingsView({ editZone }: { editZone: (id: string | 'new') => void }) {
@@ -60,10 +60,10 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
 
         <section className="card">
           <h2>Lights</h2>
-          <p className="muted small">Rename a light here without changing it in the Govee app.</p>
+          <p className="muted small">Rename a light here without changing it in the Govee app. The order sets how lights are listed and which light gets which colour in a “one per light” look. Tick Reversed if designs come out backwards on a light.</p>
           <div className="rows">
-            {devices.map((d) => (
-              <DeviceRow key={d.id} device={d} />
+            {devices.map((d, i) => (
+              <DeviceRow key={d.id} device={d} move={(by) => void attempt(api('PUT', '/order', { ids: moved(devices.map((x) => x.id), i, by) }))} first={i === 0} last={i === devices.length - 1} />
             ))}
           </div>
         </section>
@@ -235,22 +235,66 @@ function LocationCard() {
   );
 }
 
-function DeviceRow({ device }: { device: Device }) {
+/** A copy of the list with one item moved up (-1) or down (+1). */
+function moved<T>(list: T[], index: number, by: -1 | 1): T[] {
+  const next = [...list];
+  const to = index + by;
+  if (to < 0 || to >= next.length) return next;
+  [next[index], next[to]] = [next[to], next[index]];
+  return next;
+}
+
+function MoveButtons({ name, move, first, last }: { name: string; move: (by: -1 | 1) => void; first: boolean; last: boolean }) {
+  return (
+    <>
+      <button type="button" className="icon-btn sm" aria-label={`Move ${name} up`} disabled={first} onClick={() => move(-1)}>
+        <ArrowUpIcon size={16} />
+      </button>
+      <button type="button" className="icon-btn sm" aria-label={`Move ${name} down`} disabled={last} onClick={() => move(1)}>
+        <ArrowDownIcon size={16} />
+      </button>
+    </>
+  );
+}
+
+function DeviceRow({ device, move, first, last }: { device: Device; move: (by: -1 | 1) => void; first: boolean; last: boolean }) {
   const [name, setName] = useState(device.name);
+  // Shown at once rather than after the server confirms, so the box does not flick back.
+  const [reversed, setReversed] = useState(device.reversed);
+  useEffect(() => setReversed(device.reversed), [device.reversed]);
+  const patch = (change: object) => void attempt(api('PATCH', `/devices/${encodeURIComponent(device.id)}`, change));
   const commit = () => {
     const next = name.trim();
     if (next === device.name) return;
     // An empty name falls back to the name from the Govee app.
-    void attempt(api('PATCH', `/devices/${encodeURIComponent(device.id)}`, { name: next || null }));
+    patch({ name: next || null });
     if (!next) setName(device.goveeName);
   };
   return (
     <div className="device-row">
-      <input className="input" aria-label={`Name for ${device.goveeName}`} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-      <small>
-        {MODEL_NAMES[device.kind]} · {device.sku}
-        {device.caps.segments > 0 && ` · ${device.caps.segments} segments`} · {device.local ? 'reached locally' : 'reached through the cloud'}
-      </small>
+      <div className="order-row">
+        <input className="input" aria-label={`Name for ${device.goveeName}`} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+        <MoveButtons name={device.name} move={move} first={first} last={last} />
+      </div>
+      <div className="order-row">
+        <small>
+          {MODEL_NAMES[device.kind]} · {device.sku}
+          {device.caps.segments > 0 && ` · ${device.caps.segments} segments`} · {device.local ? 'reached locally' : 'reached through the cloud'}
+        </small>
+        {device.caps.segments > 1 && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={reversed}
+              onChange={(e) => {
+                setReversed(e.target.checked);
+                patch({ reversed: e.target.checked });
+              }}
+            />{' '}
+            Reversed
+          </label>
+        )}
+      </div>
     </div>
   );
 }
@@ -289,17 +333,42 @@ function AgentCard({ authRequired }: { authRequired: boolean }) {
   );
 }
 
-export function ZoneEditor({ id, onClose }: { id: string | 'new'; onClose: () => void }) {
+/** Colours for checking a run: it should start green, pass through blue and end red. */
+const TEST_COLORS = [0x00ff00, 0x0000ff, 0xff0000];
+
+export function ZoneEditor({ id, onClose, onSaved }: { id: string | 'new'; onClose: () => void; onSaved: (id: string) => void }) {
   const snap = useSnap();
   const zone: Zone | undefined = id === 'new' ? undefined : snap.groups.find((g) => g.id === id);
   const [name, setName] = useState(zone?.name ?? '');
-  const [ids, setIds] = useState<string[]>(zone?.deviceIds ?? []);
+  const [ids, setIds] = useState<string[]>(() => (zone?.deviceIds ?? []).filter((d) => snap.devices.some((x) => x.id === d)));
+  const [joined, setJoined] = useState(!!zone?.joined);
+  const [reversed, setReversed] = useState<Record<string, boolean>>(() => Object.fromEntries(snap.devices.map((d) => [d.id, d.reversed])));
+  const [tested, setTested] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const light = (deviceId: string) => snap.devices.find((d) => d.id === deviceId);
+  const joining = joined && ids.length > 1;
 
-  const save = async () => {
-    if (!name.trim()) return toast('Give the zone a name first', 'error');
-    const body = { name: name.trim(), deviceIds: ids };
-    if (await attempt(zone ? api('PUT', `/groups/${zone.id}`, body) : api('POST', '/groups', body))) onClose();
+  /** Saves the zone and any changed directions. Resolves to the zone's id, or null if it failed. */
+  const save = async (): Promise<string | null> => {
+    if (!name.trim()) {
+      toast('Give the zone a name first', 'error');
+      return null;
+    }
+    const body = { name: name.trim(), deviceIds: ids, joined: joining };
+    const saved = await attempt(zone ? api<Zone>('PUT', `/groups/${zone.id}`, body) : api<Zone>('POST', '/groups', body));
+    if (!saved) return null;
+    for (const deviceId of ids) {
+      if (light(deviceId)?.reversed !== !!reversed[deviceId]) await attempt(api('PATCH', `/devices/${encodeURIComponent(deviceId)}`, { reversed: !!reversed[deviceId] }));
+    }
+    return saved.id;
+  };
+
+  const test = async () => {
+    const savedId = await save();
+    if (!savedId) return;
+    onSaved(savedId); // keep editing the zone that now exists
+    await control([`group:${savedId}`], { type: 'palette', colors: TEST_COLORS, pattern: 'gradient', brightness: null });
+    setTested(true);
   };
 
   return (
@@ -326,9 +395,15 @@ export function ZoneEditor({ id, onClose }: { id: string | 'new'; onClose: () =>
             ))}
           <span className="spacer" />
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {tested ? 'Close' : 'Cancel'}
           </button>
-          <button type="button" className="btn primary" onClick={() => void save()}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={async () => {
+              if (await save()) onClose();
+            }}
+          >
             Save zone
           </button>
         </>
@@ -348,6 +423,42 @@ export function ZoneEditor({ id, onClose }: { id: string | 'new'; onClose: () =>
             ))}
           </div>
         </Group>
+
+        {ids.length > 1 && (
+          <Group label="Joined end to end" hint={joining ? undefined : 'Turn this on when these lights are mounted one after another, like two ropes along the same path.'}>
+            <div className="inline">
+              <Toggle on={joined} label="These lights are joined end to end" onChange={setJoined} />
+              <span className="muted">{joined ? 'Looks, painting and movement run across them as one long light' : 'Each light shows designs on its own'}</span>
+            </div>
+          </Group>
+        )}
+
+        {joining && (
+          <Group label="Order and direction" hint="List the lights from where the run starts to where it ends. To make two runs mirror each other, start both at the same end, such as the street.">
+            <div className="rows">
+              {ids.map((deviceId, i) => (
+                <div key={deviceId} className="order-row boxed">
+                  <span className="order-number">{i + 1}</span>
+                  <span className="order-name">{light(deviceId)?.name}</span>
+                  <label className="check">
+                    <input type="checkbox" checked={!!reversed[deviceId]} onChange={(e) => setReversed({ ...reversed, [deviceId]: e.target.checked })} /> Reversed
+                  </label>
+                  <MoveButtons name={light(deviceId)?.name ?? 'light'} move={(by) => setIds(moved(ids, i, by))} first={i === 0} last={i === ids.length - 1} />
+                </div>
+              ))}
+            </div>
+            <div className="inline wrap">
+              <button type="button" className="btn" onClick={() => void test()}>
+                <PlayIcon size={14} /> Save and test
+              </button>
+            </div>
+            <span className="field-hint">
+              {tested
+                ? 'The run should now start green, turn blue in the middle and end red. If one light runs the wrong way, tick Reversed for it; if they are in the wrong order, move them. Then test again.'
+                : 'The test lights the run green at its start, blue in the middle and red at its end, so you can see whether the order and directions are right.'}
+            </span>
+          </Group>
+        )}
       </div>
     </Sheet>
   );

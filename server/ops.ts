@@ -73,7 +73,7 @@ export const suggestSchema = z.object({
   targets: targets.default(['all']),
 });
 
-export const groupSchema = z.object({ name, deviceIds: z.array(z.string()).max(100) });
+export const groupSchema = z.object({ name, deviceIds: z.array(z.string()).max(100), joined: z.boolean().optional() });
 
 export const settingsSchema = z.object({
   location: z
@@ -157,14 +157,26 @@ export class Ops {
 
   saveGroup(input: unknown, id?: string): Group {
     const data = groupSchema.parse(input);
+    data.deviceIds = [...new Set(data.deviceIds)];
+    if (data.joined) {
+      if (data.deviceIds.length < 2) throw new HttpError(400, 'Joining needs at least two lights');
+      // A light is physically in one place, so it can only be part of one run.
+      for (const other of this.store.data.groups) {
+        if (other.id === id || !other.joined) continue;
+        const shared = other.deviceIds.find((d) => data.deviceIds.includes(d));
+        if (shared) throw new HttpError(400, `${this.hub.list().find((d) => d.id === shared)?.name ?? 'A light'} is already joined in “${other.name}”`);
+      }
+    }
     let group: Group;
-    if (id) group = Object.assign(this.find(this.store.data.groups, id, 'Zone'), data);
-    else {
+    if (id) {
+      group = Object.assign(this.find(this.store.data.groups, id, 'Zone'), data);
+      if (!data.joined) delete group.joined;
+    } else {
       group = { id: crypto.randomUUID(), ...data };
       this.store.data.groups.push(group);
     }
     this.store.save();
-    this.changed('groups', 'schedules');
+    this.changed('groups', 'schedules', 'devices');
     return group;
   }
 

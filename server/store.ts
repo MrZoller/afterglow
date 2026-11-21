@@ -9,6 +9,8 @@ export interface StoredDevice {
   info: DeviceInfo;
   alias: string | null;
   state: DeviceState;
+  /** Mounted with its last segment where designs should start. */
+  reversed?: boolean;
 }
 
 interface Data {
@@ -26,6 +28,8 @@ interface Data {
   animations: StoredAnimation[];
   /** Starter looks already added, so new ones can be offered once and deleted ones stay deleted. */
   seeded: string[];
+  /** Light ids in the order the user arranged them; lights not listed come after. */
+  order: string[];
 }
 
 /** Starters that shipped before the `seeded` list existed. */
@@ -43,6 +47,7 @@ const empty = (): Data => ({
   usage: { day: '', count: 0 },
   animations: [],
   seeded: STARTER_LOOKS.map((look) => look.id),
+  order: [],
 });
 
 const MAX_ACTIVITY = 200;
