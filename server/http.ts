@@ -5,6 +5,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { z, ZodError } from 'zod';
 import { placeLights } from '../shared/looks';
 import type { LookSuggestions, Snapshot } from '../shared/types';
+import type { Backups } from './backup';
 import { config } from './config';
 import { GoveeError } from './govee/cloud';
 import { HttpError, type Hub } from './hub';
@@ -16,6 +17,7 @@ export interface Services {
   hub: Hub;
   ops: Ops;
   scheduler: Scheduler;
+  backups: Backups;
   snapshot(): Snapshot;
 }
 
@@ -121,7 +123,7 @@ export class Events {
 }
 
 export function createApi(services: Services, events: Events): express.Router {
-  const { hub, ops, scheduler } = services;
+  const { hub, ops, scheduler, backups } = services;
   const api = express.Router();
   api.use(express.json({ limit: '1mb' }));
   api.use(sameOrigin);
@@ -245,6 +247,20 @@ export function createApi(services: Services, events: Events): express.Router {
   });
 
   api.put('/settings', (req, res) => void res.json(ops.updateSettings(req.body)));
+
+  /** The current setup as a file to keep somewhere safe. */
+  api.get('/backup', (_req, res) => {
+    const day = new Date().toISOString().slice(0, 10);
+    res.set('Content-Disposition', `attachment; filename="afterglow-backup-${day}.json"`).json(backups.document());
+  });
+  api.get('/backups', (_req, res) => void res.json(backups.list()));
+  api.post('/backups', (_req, res) => void res.json(backups.snapshot('manual')));
+  /** Restores a snapshot kept on this computer (by name) or an uploaded backup file. */
+  api.post('/restore', (req, res) => {
+    const body = z.object({ name: z.string().optional(), backup: z.unknown().optional() }).parse(req.body);
+    if (!body.name && body.backup === undefined) throw new HttpError(400, 'Nothing to restore');
+    res.json(backups.restore(body.name ? backups.read(body.name) : body.backup));
+  });
 
   api.use((_req, res) => void res.status(404).json({ error: 'Not found' }));
 

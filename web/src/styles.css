@@ -1661,6 +1661,37 @@ select.input {
   height: 34px;
 }
 
+.backup-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 54px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.backup-row > div {
+  flex: 1;
+  min-width: 150px;
+  display: grid;
+}
+
+.backup-row strong {
+  font-weight: 580;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-row small {
+  color: var(--text-3);
+}
+
+a.btn {
+  text-decoration: none;
+  color: inherit;
+}
+
 .copy-row {
   display: flex;
   align-items: center;

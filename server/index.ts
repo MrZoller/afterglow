@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Snapshot, Status } from '../shared/types';
 import { aiEnabled } from './ai';
+import { Backups } from './backup';
 import { config } from './config';
 import { GoveeCloud } from './govee/cloud';
 import { startFakeGovee } from './govee/fake';
@@ -67,7 +68,8 @@ async function main() {
   const events = new Events(snapshot);
   scheduler = new Scheduler(store, hub, () => events.changed('schedules'));
   const ops = new Ops(store, hub, (...kinds) => events.changed(...kinds));
-  const services: Services = { hub, ops, scheduler, snapshot };
+  const backups = new Backups(store, hub, config.backupDir, config.demo ? 'demo' : 'afterglow', () => events.changed('devices', 'groups', 'looks', 'schedules', 'settings', 'status', 'activity'));
+  const services: Services = { hub, ops, scheduler, backups, snapshot };
 
   hub.on('devices', () => events.changed('devices'));
   hub.on('status', () => events.changed('status'));
@@ -86,6 +88,7 @@ async function main() {
   await hub.start();
   if (config.demo) seedDemo(store, hub, ops);
   scheduler.start();
+  backups.start();
 
   const app = express();
   app.disable('x-powered-by');

@@ -25,6 +25,8 @@ export const config = {
   /** Talk to lights directly over the local network where possible. Set LAN=0 to use the cloud only. */
   lan: env('LAN') !== '0',
   dataDir: env('DATA_DIR') || path.join(root, 'data'),
+  /** Where daily backups go. Point it at a synced folder to keep them off this computer too. */
+  backupDir: env('BACKUP_DIR') || path.join(env('DATA_DIR') || path.join(root, 'data'), 'backups'),
   webDir: path.join(root, 'dist', 'web'),
   version: '0.1.0',
 };

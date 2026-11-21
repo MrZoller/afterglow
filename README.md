@@ -139,7 +139,7 @@ Tools: `list_lights`, `control_lights`, `paint_segments`, `list_scenes`, `apply_
 - **DIY scenes and snapshots** are created in the Govee app. Use the reload button on the Scenes tab to pick up new ones.
 - **Turn-offs are checked.** After a schedule switches lights off, Afterglow asks each light whether it is really off: 1, 3, 10, 30 and 60 minutes later, stopping as soon as all are. A light that is still on, or cannot be reached, is sent "off" again each time. The schedule's card then shows "confirmed off", or names the lights that are still on or unreachable, which are also marked on the Lights page. A light stops being checked as soon as it is seen off or anything else is applied to it, so turning one back on yourself is respected. Lights reached locally answer for themselves; for the rest the check relies on what Govee's cloud reports.
 - **Overlapping schedules**: when two start at the same minute, one limited to a time of year wins over an everyday one.
-- **Your data** is one readable file, `data/afterglow.json`. Copy it to back up looks, zones and schedules.
+- **Backups are automatic.** Looks, zones, schedules, settings and how lights are named and arranged are copied every day into `data/backups` and kept for two weeks. Settings → Backups restores one, downloads the current setup as a file, or restores from a file (also the way to move to another computer). The setup being replaced is saved first, so a restore can be undone. Backups never contain the Govee key or passphrase. To keep the daily copies off the computer as well, set `BACKUP_DIR` in `.env` to a folder that syncs elsewhere, such as iCloud Drive.
 
 ## Development
 

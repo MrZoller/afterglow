@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Device, Group as Zone } from '../../../shared/types';
+import { useEffect, useRef, useState } from 'react';
+import type { BackupInfo, Device, Group as Zone } from '../../../shared/types';
 import { Field, Group, Sheet, Toggle } from '../components/ui';
 import { ArrowDownIcon, ArrowUpIcon, CopyIcon, PencilIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons';
 import { api, attempt, control, toast, useSnap } from '../store';
@@ -92,6 +92,8 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
 
         <AgentCard authRequired={status.authRequired} />
 
+        <BackupsCard />
+
         <section className="card">
           <h2>Recent activity</h2>
           {activity.length === 0 ? (
@@ -113,6 +115,135 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
         </section>
       </div>
     </>
+  );
+}
+
+const BACKUP_KINDS: Record<BackupInfo['kind'], string> = { daily: 'Daily', manual: 'Made by hand', 'before-restore': 'Before a restore' };
+
+const backupCounts = (b: { looks: number; zones: number; schedules: number }) => `${plural(b.looks, 'look')}, ${plural(b.zones, 'zone')}, ${plural(b.schedules, 'schedule')}`;
+
+/** Daily copies of the setup, with ways to restore one, download one, or restore from a file. */
+function BackupsCard() {
+  const [list, setList] = useState<BackupInfo[] | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [upload, setUpload] = useState<{ backup: unknown; summary: string } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = () => api<BackupInfo[]>('GET', '/backups').then(setList, () => setList([]));
+  useEffect(() => void load(), []);
+
+  const restore = async (body: { name: string } | { backup: unknown }) => {
+    setBusy(true);
+    const done = await attempt(api<{ looks: number; zones: number; schedules: number }>('POST', '/restore', body));
+    setBusy(false);
+    if (!done) return;
+    toast(`Restored ${backupCounts(done)}`);
+    setConfirming(null);
+    setUpload(null);
+    void load();
+  };
+
+  const pick = async (file: File | undefined) => {
+    if (fileRef.current) fileRef.current.value = '';
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      if (backup?.app !== 'afterglow' || !Array.isArray(backup.looks)) throw new Error('not a backup');
+      const when = new Date(backup.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      setUpload({ backup, summary: `${backupCounts({ looks: backup.looks.length, zones: backup.groups?.length ?? 0, schedules: backup.schedules?.length ?? 0 })}, saved ${when}` });
+    } catch {
+      toast('That file is not an Afterglow backup', 'error');
+    }
+  };
+
+  const shown = list ? (showAll ? list : list.slice(0, 4)) : [];
+
+  return (
+    <section className="card">
+      <h2>Backups</h2>
+      <p className="muted small">
+        A copy of your looks, zones, schedules and settings is saved on this computer every day and kept for two weeks. Restoring one replaces the current setup, which is saved first so a restore can be undone. Backups do not contain your
+        Govee key or passphrase.
+      </p>
+
+      {list === null ? (
+        <p className="muted">Loading…</p>
+      ) : list.length === 0 ? (
+        <p className="muted">No backups yet. The first is made within the hour.</p>
+      ) : (
+        <div className="rows">
+          {shown.map((b) => (
+            <div key={b.name} className="backup-row">
+              <div>
+                <strong>{new Date(b.at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</strong>
+                <small>
+                  {BACKUP_KINDS[b.kind]} · {backupCounts(b)}
+                </small>
+              </div>
+              {confirming === b.name ? (
+                <>
+                  <button type="button" className="btn sm danger" disabled={busy} onClick={() => void restore({ name: b.name })}>
+                    Replace current setup
+                  </button>
+                  <button type="button" className="btn sm ghost" onClick={() => setConfirming(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn sm" aria-label={`Restore the backup from ${new Date(b.at).toLocaleString()}`} onClick={() => setConfirming(b.name)}>
+                  Restore
+                </button>
+              )}
+            </div>
+          ))}
+          {list.length > 4 && (
+            <button type="button" className="btn ghost sm" onClick={() => setShowAll(!showAll)}>
+              {showAll ? 'Show fewer' : `Show all ${list.length}`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {upload && (
+        <div className="notice">
+          <span>This file holds {upload.summary}. Restoring it replaces the current setup.</span>
+          <div className="inline">
+            <button type="button" className="btn sm danger" disabled={busy} onClick={() => void restore({ backup: upload.backup })}>
+              Restore this file
+            </button>
+            <button type="button" className="btn sm ghost" onClick={() => setUpload(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="inline wrap">
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            if (await attempt(api('POST', '/backups'))) {
+              toast('Backup saved');
+              void load();
+            }
+          }}
+        >
+          Back up now
+        </button>
+        <a className="btn" href="/api/backup" download>
+          Download a backup
+        </a>
+        <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+          Restore from a file
+        </button>
+        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
+      </div>
+      <p className="muted small">The daily copies live on the same disk as the app. Download one now and then and keep it somewhere else, so a failed disk does not take both.</p>
+    </section>
   );
 }
 

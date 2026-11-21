@@ -210,6 +210,17 @@ export interface Snapshot {
   activity: ActivityEntry[];
 }
 
+/** A saved copy of the setup: looks, zones, schedules, settings, and how lights are named and arranged. */
+export interface BackupInfo {
+  name: string;
+  /** `daily` is made automatically; `before-restore` is taken just before a restore so it can be undone. */
+  kind: 'daily' | 'manual' | 'before-restore';
+  at: number;
+  looks: number;
+  zones: number;
+  schedules: number;
+}
+
 export interface ApplySummary {
   applied: string[];
   skipped: { deviceId: string; name: string; reason: string }[];

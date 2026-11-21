@@ -330,8 +330,12 @@ export const HELP: HelpTopic[] = [
         ],
       },
       {
-        question: 'Where is everything saved, and how do I back it up?',
-        answer: ['Looks, zones, schedules and settings are kept in one file, `data/afterglow.json`, in the app’s folder on the computer that runs it. Copy that file to back them up.'],
+        question: 'Is my setup backed up? How do I get something back?',
+        answer: [
+          'Yes. A copy of your looks, zones, schedules and settings is saved every day and kept for two weeks. **Backups** in [Settings](#/settings) lists them; press **Restore** beside one to go back to it. The setup being replaced is saved first, so a restore can itself be undone.',
+          'Those copies are on the same disk as the app. Use **Download a backup** now and then and keep the file somewhere else; **Restore from a file** brings it back, including on a new computer.',
+          'Backups do not include your Govee key or passphrase, which stay in the `.env` file.',
+        ],
       },
     ],
   },
