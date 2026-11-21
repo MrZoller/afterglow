@@ -64,9 +64,20 @@ This starts Afterglow whenever you log in and restarts it if it stops. Schedules
 
 ### Use it from your phone
 
-On the same Wi-Fi, open `http://<your-mac's-name>.local:4680` (the name is under System Settings → General → Sharing), or use one of the addresses printed when Afterglow starts. In Safari choose **Share → Add to Home Screen** to get an app icon.
+Settings → **Open on another device** lists the addresses that work, with a copy button for each. The same list is printed when Afterglow starts.
 
-To use it away from home, put the Mac and your phone on a private network such as [Tailscale](https://tailscale.com) rather than opening a port on your router.
+- **At home:** on the same Wi-Fi, use the home-network address, for example `http://mac-mini.local:4680`.
+- **Anywhere:** install [Tailscale](https://tailscale.com) on the Mac and your phone and sign both in to the same tailnet. Afterglow already listens on the Tailscale interface, so the address shown under "Anywhere, over Tailscale" (for example `http://mac-mini.tail1a2b3.ts.net:4680`) works from wherever your phone is. Nothing is exposed to the public internet, and no router ports need opening.
+
+In Safari choose **Share → Add to Home Screen** to get an app icon.
+
+For an `https://` address with a valid certificate (which also lets the phone share its location with the Settings page), have Tailscale front the app:
+
+```bash
+tailscale serve --bg 4680
+```
+
+Then open `https://<machine>.<tailnet>.ts.net` with no port.
 
 ### Lock it with a passphrase
 

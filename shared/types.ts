@@ -183,6 +183,8 @@ export interface Status {
   ai: boolean;
   /** Local network control: off, or on with any problem that stops it working. */
   lan: { enabled: boolean; error: string | null };
+  /** Where the app can be opened from: this computer, the home network, and Tailscale when present. */
+  addresses: { kind: 'computer' | 'network' | 'tailscale'; label: string; url: string }[];
   version: string;
 }
 

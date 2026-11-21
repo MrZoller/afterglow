@@ -54,6 +54,8 @@ export function SettingsView({ editZone }: { editZone: (id: string | 'new') => v
           </button>
         </section>
 
+        <AddressCard />
+
         <LocationCard />
 
         <section className="card">
@@ -128,6 +130,45 @@ function LocalControl() {
       {near > 0 && ' On/off, brightness, single colours and white go straight to them, instantly and without using Govee requests. Multi-colour designs and Govee scenes still go through the cloud.'}
       {near < devices.length && ` To add ${near === 0 ? 'them' : 'the rest'}, open each light’s settings in the Govee Home app and turn on LAN Control; they appear here within a minute.`}
     </p>
+  );
+}
+
+const copyText = (text: string) =>
+  navigator.clipboard?.writeText(text).then(
+    () => toast('Copied'),
+    () => toast('Could not copy; select the text instead', 'error'),
+  ) ?? toast('Could not copy; select the text instead', 'error');
+
+/** The addresses to type on another device, including the Tailscale one when this computer is on a tailnet. */
+function AddressCard() {
+  const { status } = useSnap();
+  const others = status.addresses.filter((a) => a.kind !== 'computer');
+  const tailscale = others.some((a) => a.kind === 'tailscale');
+  return (
+    <section className="card">
+      <h2>Open on another device</h2>
+      {others.length === 0 ? (
+        <p className="muted">This computer is not on a network other devices can reach.</p>
+      ) : (
+        <div className="rows">
+          {others.map((a) => (
+            <Group key={a.url} label={a.label}>
+              <div className="copy-row">
+                <code>{a.url}</code>
+                <button type="button" className="icon-btn" aria-label={`Copy ${a.url}`} onClick={() => void copyText(a.url)}>
+                  <CopyIcon size={16} />
+                </button>
+              </div>
+            </Group>
+          ))}
+        </div>
+      )}
+      <p className="muted small">
+        {tailscale
+          ? 'The Tailscale address works from anywhere, on any device signed in to your tailnet. On a phone, add the page to your home screen to open it like an app.'
+          : 'These work on your home network. To reach Afterglow from anywhere, install Tailscale on this computer and your phone; its address will then appear here.'}
+      </p>
+    </section>
   );
 }
 

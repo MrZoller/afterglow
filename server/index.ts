@@ -1,4 +1,3 @@
-import os from 'node:os';
 import express from 'express';
 import type { Snapshot, Status } from '../shared/types';
 import { aiEnabled } from './ai';
@@ -10,6 +9,7 @@ import { GoveeLan } from './govee/lan';
 import { Hub } from './hub';
 import { createApi, Events, requireAuth, sameOrigin, staticApp, type Services } from './http';
 import { mcpHandler } from './mcp';
+import { accessAddresses } from './network';
 import { Ops } from './ops';
 import { Scheduler, sunTimes } from './scheduler';
 import { Store } from './store';
@@ -32,6 +32,8 @@ async function main() {
   }
   const hub = new Hub(cloud, store, lan);
 
+  let addresses = await accessAddresses(config.port, config.host);
+
   const status = (): Status => {
     const loc = store.data.settings.location;
     const sun = loc ? sunTimes(new Date(), loc) : null;
@@ -47,6 +49,7 @@ async function main() {
       authRequired: !!config.accessToken,
       ai: aiEnabled(),
       lan: { enabled: !!lan, error: lan?.error ?? null },
+      addresses,
       version: config.version,
     };
   };
@@ -69,6 +72,14 @@ async function main() {
   hub.on('devices', () => events.changed('devices'));
   hub.on('status', () => events.changed('status'));
   hub.on('activity', () => events.changed('activity'));
+  // Networks come and go (Tailscale connecting after startup, a new Wi-Fi address).
+  setInterval(async () => {
+    const next = await accessAddresses(config.port, config.host);
+    if (JSON.stringify(next) !== JSON.stringify(addresses)) {
+      addresses = next;
+      events.changed('status');
+    }
+  }, 120_000).unref();
   // "Next run" times drift as the day goes on; refresh them for open pages.
   setInterval(() => events.changed('schedules', 'status'), 60_000).unref();
 
@@ -83,16 +94,11 @@ async function main() {
   app.use(...staticApp());
 
   app.listen(config.port, config.host, () => {
-    const addresses = Object.values(os.networkInterfaces())
-      .flat()
-      .filter((n) => n && n.family === 'IPv4' && !n.internal)
-      .map((n) => `http://${n!.address}:${config.port}`);
     console.log(`Afterglow ${config.version} is running${config.demo ? ' in demo mode (simulated lights)' : ''}`);
-    console.log(`  This computer:  http://localhost:${config.port}`);
-    if (config.host === '0.0.0.0' && addresses.length) console.log(`  Your network:   ${addresses.join('  ')}`);
-    console.log(`  MCP endpoint:   http://localhost:${config.port}/mcp`);
-    if (!config.demo && !hub.connected) console.log(`  Govee problem:  ${hub.error}`);
-    if (lan?.error) console.log(`  Local control:  unavailable (${lan.error}); using Govee's cloud for everything`);
+    for (const a of addresses) console.log(`  ${`${a.label}:`.padEnd(26)}${a.url}`);
+    console.log(`  ${'MCP endpoint:'.padEnd(26)}http://localhost:${config.port}/mcp`);
+    if (!config.demo && !hub.connected) console.log(`  ${'Govee problem:'.padEnd(26)}${hub.error}`);
+    if (lan?.error) console.log(`  ${'Local control:'.padEnd(26)}unavailable (${lan.error}); using Govee's cloud for everything`);
   });
 
   const stop = () => {
