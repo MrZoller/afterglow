@@ -37,7 +37,7 @@ Reported by the owner on 2026-11-21 and 22, on four H61A9 and four H7086:
 - Groups made in the Govee app (`SameModeGroup` and `DreamViewScenic` on this account) are left out after updating: Settings lists the eight lights only.
 - Designs over your own network: the **Test** pattern appears on both the H61A9 and the H7086, so both models act on the undocumented local message.
 - With the extra looks for lights after starting, all eight showed as "reached locally, designs too" straight after a restart, where before they took about a minute. Seen once.
-- The first scheduled evening ran with local designs switched on for both models, and the owner noticed nothing wrong. What the schedule's card said after the turn-off was not reported.
+- The first scheduled evening ran with local designs switched on for both models, and the owner noticed nothing wrong. Recent activity shows the look applied at the start (5:36 PM), the lights switched off at the end (7:04 AM), and "lights confirmed off" one minute later with no light needing another try. Nothing was logged for the check after the start, which means every light was seen on at the first look. All eight lights are reached locally, so each answered for itself; this says nothing yet about lights that only Govee's cloud can vouch for.
 - **Send a test** delivers a notification to a phone through ntfy.sh.
 
 ### Known gaps
