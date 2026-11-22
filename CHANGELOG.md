@@ -31,12 +31,13 @@ Changes that affect how Afterglow behaves, newest first. Dates are year-month-da
 
 ### Confirmed on real lights
 
-Reported by the owner on 2026-11-21, on four H61A9 and four H7086:
+Reported by the owner on 2026-11-21 and 22, on four H61A9 and four H7086:
 
 - Every light shows as reached locally, so the identifier a light announces on the local network matches the one Govee's cloud reports.
 - Groups made in the Govee app (`SameModeGroup` and `DreamViewScenic` on this account) are left out after updating: Settings lists the eight lights only.
 - Designs over your own network: the **Test** pattern appears on both the H61A9 and the H7086, so both models act on the undocumented local message.
 - With the extra looks for lights after starting, all eight showed as "reached locally, designs too" straight after a restart, where before they took about a minute. Seen once.
+- The first scheduled evening ran with local designs switched on for both models, and the owner noticed nothing wrong. What the schedule's card said after the turn-off was not reported.
 - **Send a test** delivers a notification to a phone through ntfy.sh.
 
 ### Known gaps
